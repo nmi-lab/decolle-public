@@ -17,7 +17,7 @@ import torch
 import numpy as np
 from itertools import chain
 from collections import namedtuple
-from decolle.utils import train, test, accuracy, load_model_from_checkpoint, save_checkpoint, write_stats, get_output_shape
+from .utils import train, test, accuracy, load_model_from_checkpoint, save_checkpoint, write_stats, get_output_shape
 
 dtype = torch.float32
 

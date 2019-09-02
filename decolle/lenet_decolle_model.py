@@ -9,8 +9,7 @@
 # Copyright : (c) UC Regents, Emre Neftci
 # Licence : GPLv2
 #----------------------------------------------------------------------------- 
-from base_model import *
-device = 'cuda'
+from .base_model import *
 
 class LenetDECOLLE(DECOLLEBase):
     def __init__(self,
