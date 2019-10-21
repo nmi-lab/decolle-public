@@ -4,12 +4,12 @@ Mhid:
 - 1000
 - 1000
 - 1000
-batch_size: 100
-batch_size_test: 10000
+batch_size: 300
+batch_size_test: 300
 betas:
 - 0.9
 - 0.999
-burnin_steps: 100
+burnin_steps: 0
 chunk_size_test: 1
 chunk_size_train: 1
 dataset: mnist
@@ -22,16 +22,16 @@ kernel_size:
 - 7
 lc_ampl: 1.5
 learning_rate: 1.0e-3
-loss: nn.CrossEntropyLoss
+loss: ignored
 lr_drop_factor: 5
 lr_drop_interval: 10000
-num_epochs: 60000
+num_epochs: 30
 num_conv_layers: 0
 num_mlp_layers: 3
-optimizer: adam
+optimizer: ignored
 out_channels: 10
 pool_size:
 - 2
 - 2
 random_tau: false
-test_interval: 1000
+test_interval: 1

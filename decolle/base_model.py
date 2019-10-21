@@ -17,7 +17,8 @@ import torch
 import numpy as np
 from itertools import chain
 from collections import namedtuple
-from .utils import train, test, accuracy, load_model_from_checkpoint, save_checkpoint, write_stats, get_output_shape
+import warnings
+from decolle.utils import train, test, accuracy, load_model_from_checkpoint, save_checkpoint, write_stats, get_output_shape
 
 dtype = torch.float32
 
@@ -103,9 +104,9 @@ class FALinear(nn.Module):
 class LIFLayer(nn.Module):
     NeuronState = namedtuple('NeuronState', ['P', 'Q', 'R', 'S'])
 
-    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, random_tau=False):
+    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000):
         super(LIFLayer, self).__init__()
-        self.base_layer = self.layer = layer
+        self.base_layer = layer
         self.alpha = torch.tensor(alpha)
         self.beta = torch.tensor(beta)
         self.tau_m = torch.nn.Parameter(1. / (1 - self.alpha), requires_grad=False)
@@ -114,23 +115,6 @@ class LIFLayer(nn.Module):
         self.alpharp = alpharp
         self.wrp = wrp
         self.state = None
-        self.random_tau = random_tau
-
-    def randomize_tau(self, channels, im_size, low=5, high=10):
-        '''
-        Returns a random temporal constant of size [channels, im_size[0], im_size[1]] computed as
-        `1 / Dt*tau where Dt is the temporal window, and tau is a random value expressed in microseconds
-        between low and high.
-        :param channels: output channels
-        :param im_size: output size
-        :param low: lower bound for random distribution of temporal value (microseconds)
-        :param high: higher bound for random distribution of temporal value (microseconds)
-        :return: 1/Dt*tau
-        '''
-        tau = np.random.uniform(low, high, size=channels)
-        tau = np.broadcast_to(tau, (im_size[0], im_size[1], channels)).transpose(2, 0, 1)
-        device = self.get_input_layer_device()
-        return torch.nn.Parameter(torch.Tensor(1 - self.deltat / tau).to(device), requires_grad=False)
 
     def cuda(self, device=None):
         '''
@@ -138,7 +122,7 @@ class LIFLayer(nn.Module):
         '''
         self = super().cuda(device)
         self.state = None
-        self.layer = self.layer.cuda()
+        self.base_layer = self.base_layer.cuda()
         return self
 
     def cpu(self, device=None):
@@ -147,7 +131,7 @@ class LIFLayer(nn.Module):
         '''
         self = super().cpu(device)
         self.state = None
-        self.layer = self.layer.cpu()
+        self.base_layer = self.base_layer.cpu()
         return self
 
     @staticmethod
@@ -162,7 +146,11 @@ class LIFLayer(nn.Module):
             if conv_layer.bias is not None:
                 conv_layer.bias.data.uniform_(-stdv, stdv)
         elif hasattr(layer, 'out_features'): 
-            pass
+            layer.weight.data[:]*=0
+            if layer.bias is not None:
+                layer.bias.data.uniform_(-1e-3,1e-3)
+        else:
+            warning.warn('Unhandled data type, not resetting parameters')
     
     @staticmethod
     def get_out_channels(layer):
@@ -204,13 +192,8 @@ class LIFLayer(nn.Module):
                                       S=torch.zeros([input_shape[0], out_ch] + out_shape).type(dtype).to(device))
 
     def init_parameters(self, Sin_t):
-        self.reset_parameters(self.layer)
-        if self.random_tau:
-            input_shape = list(Sin_t.shape)
-            self.alpha = self.randomize_tau(input_shape[-3], input_shape[-2:], 5000, 35000)
-            self.beta = self.randomize_tau(input_shape[-3], input_shape[-2:], 5000, 10000)
-            self.tau_m = torch.nn.Parameter(1. / (1 - self.alpha), requires_grad=False)
-            self.tau_s = torch.nn.Parameter(1. / (1 - self.beta), requires_grad=False)
+        self.reset_parameters(self.base_layer)
+
 
     def forward(self, Sin_t):
         if self.state is None:
@@ -220,23 +203,64 @@ class LIFLayer(nn.Module):
         Q = self.beta * state.Q + self.tau_s * Sin_t
         P = self.alpha * state.P + self.tau_m * state.Q  # TODO check with Emre: Q or state.Q?
         R = self.alpharp * state.R - state.S * self.wrp
-        U = self.layer(P) + R
+        U = self.base_layer(P) + R
         S = smooth_step(U)
         self.state = self.NeuronState(P=P.detach(), Q=Q.detach(), R=R.detach(), S=S.detach())
         return S, U
 
-#     def get_output_shape(self, input_shape):
-#         if not isinstance(self.layer, nn.Conv2d):
-#             raise TypeError('You can only get the output shape of Conv2d layers. Please change layer type')
-#         im_height = input_shape[-2]
-#         im_width = input_shape[-1]
-#         height = int((im_height + 2 * self.layer.padding[0] - self.layer.dilation[0] *
-#                       (self.layer.kernel_size[0] - 1) - 1) // self.layer.stride[0] + 1)
-#         weight = int((im_width + 2 * self.layer.padding[1] - self.layer.dilation[1] *
-#                       (self.layer.kernel_size[1] - 1) - 1) // self.layer.stride[1] + 1)
-#         return [height, weight]
+    def get_output_shape(self, input_shape):
+        layer = self.base_layer
+        if not isinstance(layer, nn.Conv2d):
+            raise TypeError('You can only get the output shape of Conv2d layers. Please change layer type')
+        im_height = input_shape[-2]
+        im_width = input_shape[-1]
+        height = int((im_height + 2 * layer.padding[0] - layer.dilation[0] *
+                      (layer.kernel_size[0] - 1) - 1) // layer.stride[0] + 1)
+        weight = int((im_width + 2 * layer.padding[1] - layer.dilation[1] *
+                      (layer.kernel_size[1] - 1) - 1) // layer.stride[1] + 1)
+        return [height, weight]
+    
+    def get_device(self):
+        return self.base_layer.weight.device
+    
+class LIFLayerVariableTau(LIFLayer):
+    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, random_tau=True):
+        super(LIFLayerVariableTau, self).__init__(layer, alpha, alpharp, wrp, beta, deltat)
+        self.random_tau = random_tau
+        self.alpha_mean = np.array(self.alpha)
+        self.beta_mean = np.array(self.beta)
+        
+    def randomize_tau(self, im_size, tau, std__mean = .25):
+        '''
+        Returns a random (normally distributed) temporal constant of size im_size computed as
+        `1 / Dt*tau where Dt is the temporal window, and tau is a random value expressed in microseconds
+        between low and high.
+        :param im_size: input shape
+        :param mean__std: mean to standard deviation
+        :return: 1/Dt*tau
+        '''
+        tau = np.random.normal(1, std__mean, size=im_size)*tau
+        tau[tau<5]=5
+        tau[tau>=200]=200
+        #tau = np.broadcast_to(tau, (im_size[0], im_size[1], channels)).transpose(2, 0, 1)
+        return torch.Tensor(1 - 1. / tau)
+    
+    def init_parameters(self, Sin_t):
+        device = self.get_device()
+        input_shape = list(Sin_t.shape)
+        tau_m = 1./(1-self.alpha_mean)
+        tau_s = 1./(1-self.beta_mean)
+        if self.random_tau:
+            self.alpha = torch.nn.Parameter(self.randomize_tau(input_shape[1:], tau_m).to(device), requires_grad = True)
+            self.beta  = torch.nn.Parameter(self.randomize_tau(input_shape[1:], tau_s).to(device), requires_grad = True)
+        else:
+            self.alpha = torch.nn.Parameter(torch.ones([input_shape[1:]]).to(device)*self.alpha_mean, requires_grad = True)
+            self.beta  = torch.nn.Parameter(torch.ones([input_shape[1:]]).to(device)*self.beta_mean, requires_grad = True)
+        self.tau_m = torch.nn.Parameter(1. / (1 - self.alpha), requires_grad = False)
+        self.tau_s = torch.nn.Parameter(1. / (1 - self.beta), requires_grad = False)
 
 class DECOLLEBase(nn.Module):
+    requires_init = True
     def __init__(self):
 
         super(DECOLLEBase, self).__init__()
@@ -254,22 +278,25 @@ class DECOLLEBase(nn.Module):
     def output_layer(self):
         return self.readout_layers[-1]
 
-    def get_trainable_parameters(self):
-        return chain(*[l.parameters() for l in self.LIF_layers])
+    def get_trainable_parameters(self, layer=None):
+        if layer is None:
+            return chain(*[l.parameters() for l in self.LIF_layers])
+        else:
+            return self.LIF_layers[layer].parameters()
 
     def init(self, data_batch, burnin):
         '''
         Necessary to reset the state of the network whenever a new batch is presented
         '''
-        device = self.get_input_layer_device()
+        if self.requires_init is False:
+            return
         for l in self.LIF_layers:
             l.state = None
         for i in range(max(len(self), burnin)):
-            self.forward(torch.Tensor(data_batch[:, i, :, :]).to(device))
+            self.forward(data_batch[:, i, :, :])
 
     def init_parameters(self, data_batch):
-        device = self.get_input_layer_device()
-        Sin_t = torch.Tensor(data_batch)[:, 0, :, :].to(device)
+        Sin_t = data_batch[:, 0, :, :]
         s_out, r_out = self.forward(Sin_t)[:2]
         ins = [Sin_t]+s_out
         for i,l in enumerate(self.LIF_layers):
@@ -282,7 +309,10 @@ class DECOLLEBase(nn.Module):
             layer.bias.data.uniform_(-stdv, stdv)
     
     def get_input_layer_device(self):
-        return self.LIF_layers[0].base_layer.weight.device 
+        if hasattr(self.LIF_layers[0], 'get_device'):
+            return self.LIF_layers[0].get_device() 
+        else:
+            return list(self.LIF_layers[0].parameters())[0].device
 
     def get_output_layer_device(self):
         return self.output_layer.weight.device 

@@ -1,8 +1,12 @@
 # Byte-compiled / optimized / DLL files
+scripts/logs
+scripts/runs_arg*
 __pycache__/
 *.py[cod]
 .*.sw*
 *.bak
+*runs_args*
+*logs
 
 # C extensions
 *.so
@@ -33,7 +37,7 @@ var/
 Results*
 decolle/runs*
 samples/data*
-decolle/data*
+decolle/data
 __gen__*
 
 # PyInstaller

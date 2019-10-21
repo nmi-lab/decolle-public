@@ -27,8 +27,8 @@ class LenetDECOLLE(DECOLLEBase):
                  num_conv_layers=2,
                  num_mlp_layers=1,
                  deltat=1000,
-                 random_tau=False,
-                 lc_ampl=.5):
+                 lc_ampl=.5,
+                 lif_layer_type = LIFLayer):
 
         num_layers = num_conv_layers + num_mlp_layers
         # If only one value provided, then it is duplicated for each layer
@@ -68,12 +68,11 @@ class LenetDECOLLE(DECOLLEBase):
             feature_height //= pool_size[i]
             feature_width //= pool_size[i]
             base_layer = nn.Conv2d(Nhid[i], Nhid[i + 1], kernel_size[i], stride[i], padding[i])
-            layer = LIFLayer(base_layer,
+            layer = lif_layer_type(base_layer,
                              alpha=alpha[i],
                              beta=beta[i],
                              alpharp=alpharp[i],
-                             deltat=deltat,
-                             random_tau=random_tau)
+                             deltat=deltat)
             pool = nn.MaxPool2d(kernel_size=pool_size[i])
             readout = nn.Linear(int(feature_height * feature_width * Nhid[i + 1]), out_channels)
 
@@ -93,12 +92,11 @@ class LenetDECOLLE(DECOLLEBase):
         Mhid = [mlp_in] + Mhid
         for i in range(num_mlp_layers):
             base_layer = nn.Linear(Mhid[i], Mhid[i+1])
-            layer = LIFLayer(base_layer,
+            layer = lif_layer_type(base_layer,
                              alpha=alpha[i],
                              beta=beta[i],
                              alpharp=alpharp[i],
-                             deltat=deltat,
-                             random_tau=random_tau)
+                             deltat=deltat)
             readout = nn.Linear(Mhid[i+1], out_channels)
 
             # Readout layer has random fixed weights
@@ -123,19 +121,19 @@ class LenetDECOLLE(DECOLLEBase):
                 input = input.view(input.size(0), -1)
             s, u = lif(input)
             u_p = pool(u)
-            u_sig = do(torch.sigmoid(u_p))
-            r = ro(u_sig.reshape(u_sig.size(0), -1))
-            #non-linearity must be applied after the pooling to ensure that the same winner is selected
-            s_out.append(torch.sigmoid(u_p)) 
-            r_out.append(r)
+            s_ = smooth_step(u_p)
+            sd_ = do(s_)
+            r_ = ro(sd_.reshape(sd_.size(0), -1))
+            s_out.append(s_) 
+            r_out.append(r_)
             u_out.append(u_p)
-            input = torch.sigmoid(u_p.detach())
+            input = s_.detach()
             i+=1
 
         return s_out, r_out, u_out
     
 if __name__ == "__main__":
     #Test building network
-    d = torch.zeros([1,1,28,28]).cuda()
     net = LenetDECOLLE(Nhid=[1,8],Mhid=[32,64],out_channels=10, input_shape=[1,28,28])
+    d = torch.zeros([1,1,28,28])
     net(d)
