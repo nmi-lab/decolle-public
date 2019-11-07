@@ -28,6 +28,7 @@ setup(
     install_requires=[
         "torch>=0.4",
         "scipy>=1.0",
-        "h5py"
+        "h5py",
+        "pyyaml",
     ]
 )

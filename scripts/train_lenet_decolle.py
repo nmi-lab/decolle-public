@@ -10,7 +10,7 @@
 # Licence : GPLv2
 #----------------------------------------------------------------------------- 
 from decolle.lenet_decolle_model import LenetDECOLLE
-from decolle.utils import parse_args, SummaryWriter, train, test, accuracy, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats
+from decolle.utils import parse_args, train, test, accuracy, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats
 import datetime, os, socket, tqdm
 import numpy as np
 import torch
@@ -26,23 +26,22 @@ log_dir = dirs['log_dir']
 checkpoint_dir = dirs['checkpoint_dir']
 
 dataset = importlib.import_module(params['dataset'])
-create_data = dataset.create_data
+create_dataloader = dataset.create_dataloader
 
 
 verbose = args.verbose
 
 ## Load Data
-gen_train, gen_test = create_data(chunk_size_train=params['chunk_size_train'],
+gen_train, gen_test = create_dataloader(chunk_size_train=params['chunk_size_train'],
                                   chunk_size_test=params['chunk_size_test'],
                                   batch_size=params['batch_size'],
                                   size=params['input_shape'],
-                                  dt=params['deltat'])
+                                  dt=params['deltat'], num_workers=params['num_dl_workers'])
 
 data_batch, target_batch = next(iter(gen_train))
 data_batch = torch.Tensor(data_batch).to(device)
 target_batch = torch.Tensor(target_batch).to(device)
 
-#d, t = next(iter(gen_train))
 input_shape = data_batch.shape[-3:]
 
 ## Create Model, Optimizer and Loss
