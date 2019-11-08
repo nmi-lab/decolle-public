@@ -35,7 +35,6 @@ verbose = args.verbose
 gen_train, gen_test = create_dataloader(chunk_size_train=params['chunk_size_train'],
                                   chunk_size_test=params['chunk_size_test'],
                                   batch_size=params['batch_size'],
-                                  size=params['input_shape'],
                                   dt=params['deltat'], num_workers=params['num_dl_workers'])
 
 data_batch, target_batch = next(iter(gen_train))

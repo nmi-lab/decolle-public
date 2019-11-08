@@ -16,7 +16,7 @@ betas:
 burnin_steps: 100
 chunk_size_test: 1800
 chunk_size_train: 500
-dataset: pytorch_datasets.dvs_gestures.dvsgestures_dataloaders
+dataset: torchneuromorphic.dvs_gestures.dvsgestures_dataloaders
 deltat: 1000
 input_shape:
 - 2
