@@ -1,0 +1,7 @@
+numpy==1.16.4
+requests==2.23.0
+tensorboardX==1.8
+torch==1.4.0
+-e git+git@github.com:nmi-lab/torchneuromorphic.git@master#egg=torchneuromorphic
+torchvision==0.5.0
+tqdm==4.36.1
