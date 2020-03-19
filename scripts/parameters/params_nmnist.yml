@@ -35,7 +35,7 @@ num_mlp_layers: 1
 num_layers: 3
 num_dl_workers: 8
 optimizer: adamax
-out_channels: 11
+out_channels: 10
 pool_size:
 - 2
 - 1
