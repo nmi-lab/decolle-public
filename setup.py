@@ -24,11 +24,13 @@ setup(
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),
     test_suite = 'nose.collector',
     long_description=long_description,
-    license='Apache License 2.0',
+    license='GPL 3.0',
     install_requires=[
         "torch>=0.4",
         "scipy>=1.0",
         "h5py",
-        "pyyaml",
+        "tqdm",
+        "tensorboardX",
+        "pyyaml"
     ]
 )

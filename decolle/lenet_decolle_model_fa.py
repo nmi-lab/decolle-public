@@ -1,17 +1,20 @@
 #!/bin/python
 #-----------------------------------------------------------------------------
-# File Name : allconv_decolle.py
+# File Name : lenet_decolle_model_pa.py
 # Author: Emre Neftci
 #
-# Creation Date : Wed 07 Aug 2019 07:00:31 AM PDT
+# Creation Date : Tue 04 Feb 2020 11:51:17 AM PST
 # Last Modified : 
 #
 # Copyright : (c) UC Regents, Emre Neftci
 # Licence : GPLv2
 #----------------------------------------------------------------------------- 
-from .base_model import *
 
-class LenetDECOLLE(DECOLLEBase):
+from .base_model import *
+from .lenet_decolle_model import LenetDECOLLE
+import math
+
+class LenetDECOLLEFA(LenetDECOLLE):
     def __init__(self,
                  input_shape,
                  Nhid=[1],
@@ -43,7 +46,7 @@ class LenetDECOLLE(DECOLLEBase):
         if Nhid is None:          self.Nhid = Nhid = []
         if Mhid is None:          self.Mhid = Mhid = []
 
-        super(LenetDECOLLE, self).__init__()
+        DECOLLEBase.__init__(self)
 
         # Computing padding to preserve feature size
         padding = (np.array(kernel_size) - 1) // 2  # TODO try to remove padding
@@ -102,7 +105,7 @@ class LenetDECOLLE(DECOLLEBase):
                              alpharp=alpharp[i],
                              deltat=deltat,
                              do_detach= True if method == 'rtrl' else False)
-            readout = nn.Linear(Mhid[i+1], out_channels)
+            readout = nn.FALinear(Mhid[i+1], out_channels)
 
             # Readout layer has random fixed weights
             for param in readout.parameters():
@@ -116,29 +119,21 @@ class LenetDECOLLE(DECOLLEBase):
             self.readout_layers.append(readout)
             self.dropout_layers.append(dropout_layer)
 
-    def forward(self, input):
-        s_out = []
-        r_out = []
-        u_out = []
-        i = 0
-        for lif, pool, ro, do in zip(self.LIF_layers, self.pool_layers, self.readout_layers, self.dropout_layers):
-            if i == self.num_conv_layers: 
-                input = input.view(input.size(0), -1)
-            s, u = lif(input)
-            u_p = pool(u)
-            s_ = smooth_step(u_p)
-            sd_ = do(s_)
-            r_ = ro(sd_.reshape(sd_.size(0), -1))
-            s_out.append(s_) 
-            r_out.append(r_)
-            u_out.append(u_p)
-            input = s_.detach() if lif.do_detach else s_
-            i+=1
+    def reset_lc_parameters(self, layer, lc_ampl):
+        stdv = lc_ampl / math.sqrt(layer.weight.size(1))
+        layer.weight.data.uniform_(-stdv, stdv)
+        if layer.bias is not None:
+            layer.bias.data.uniform_(-stdv, stdv)
+             
+        if hasattr(layer, 'weight_fa'):
+            layer.weight_fa.data.normal_(1, .5)
+            layer.weight_fa.data[layer.weight_fa.data<0] = 0
+            layer.weight_fa.data[:] *= layer.weight.data[:]
 
-        return s_out, r_out, u_out
-    
 if __name__ == "__main__":
     #Test building network
-    net = LenetDECOLLE(Nhid=[1,8],Mhid=[32,64],out_channels=10, input_shape=[1,28,28])
+    net = LenetDECOLLEFA(Nhid=[1,8],Mhid=[32,64],out_channels=10, input_shape=[1,28,28])
     d = torch.zeros([1,1,28,28])
     net(d)
+
+

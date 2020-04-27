@@ -44,8 +44,10 @@ class LenetDELLE(DECOLLEBase):
                  dropout=[0.5],
                  num_conv_layers=2,
                  num_mlp_layers=1,
-                 lc_ampl=.5):
-
+                 lc_ampl=1.5,
+                 method = 'rtrl'):
+        self.local = True if method is 'rtrl' else False
+        self.lc_ampl = lc_ampl
         num_layers = num_conv_layers + num_mlp_layers
         # If only one value provided, then it is duplicated for each layer
         if len(kernel_size) == 1:   kernel_size = kernel_size * num_conv_layers
@@ -127,7 +129,7 @@ class LenetDELLE(DECOLLEBase):
             s_out.append(torch.sigmoid(u_p)) 
             r_out.append(r)
             u_out.append(u_p)
-            input = torch.sigmoid(u_p.detach())
+            input = torch.sigmoid(u_p.detach() if self.local else u_p)
             i+=1
 
         return s_out, r_out, u_out
@@ -159,3 +161,22 @@ def create_data(batch_size_train=32, batch_size_test=32):
                              ),
                            batch_size=batch_size_test, shuffle=False)
     return train_loader, test_loader
+
+class GlobalLoss(DECOLLELoss):
+    def __len__(self):
+        return 1
+
+    def __call__(self, s, r, u, target, mask=1, sum_=True):
+        loss_tv = []
+        i = self.nlayers-1
+        uflat = u[i].reshape(u[i].shape[0],-1)
+        loss_tv.append(self.loss_fn(r[i]*mask, target*mask))
+        if self.reg_l[i]>0:
+            reg1_loss = self.reg_l[i]*1e-2*((relu(uflat+.01)*mask)).mean()
+            reg2_loss = self.reg_l[i]*6e-5*relu((mask*(.1-sigmoid(uflat))).mean())
+            loss_tv[-1] += reg1_loss + reg2_loss
+
+        if sum_:
+            return sum(loss_tv)
+        else:
+            return loss_tv

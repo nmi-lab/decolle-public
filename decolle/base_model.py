@@ -30,7 +30,7 @@ class SmoothStep(torch.autograd.Function):
     @staticmethod
     def forward(aux, x):
         aux.save_for_backward(x)
-        return (x >= 0).float()
+        return (x >=0).float()
 
     def backward(aux, grad_output):
         # grad_input = grad_output.clone()
@@ -101,20 +101,29 @@ class FALinear(nn.Module):
     def forward(self, input):
         return LinearFAFunction.apply(input, self.weight, self.weight_fa, self.bias)
 
+def state_detach(state):
+    for s in state:
+        s.detach_()
+
 class LIFLayer(nn.Module):
     NeuronState = namedtuple('NeuronState', ['P', 'Q', 'R', 'S'])
 
-    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000):
+    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, do_detach=True):
+        '''
+        deltat: timestep in microseconds (not milliseconds!)
+        '''
         super(LIFLayer, self).__init__()
         self.base_layer = layer
+        self.deltat = deltat
+        self.dt = deltat/1e-6
         self.alpha = torch.tensor(alpha)
         self.beta = torch.tensor(beta)
         self.tau_m = torch.nn.Parameter(1. / (1 - self.alpha), requires_grad=False)
         self.tau_s = torch.nn.Parameter(1. / (1 - self.beta), requires_grad=False)
-        self.deltat = deltat
         self.alpharp = alpharp
         self.wrp = wrp
         self.state = None
+        self.do_detach = do_detach
 
     def cuda(self, device=None):
         '''
@@ -195,6 +204,8 @@ class LIFLayer(nn.Module):
         self.reset_parameters(self.base_layer)
 
 
+            
+
     def forward(self, Sin_t):
         if self.state is None:
             self.init_state(Sin_t)
@@ -205,30 +216,34 @@ class LIFLayer(nn.Module):
         R = self.alpharp * state.R - state.S * self.wrp
         U = self.base_layer(P) + R
         S = smooth_step(U)
-        self.state = self.NeuronState(P=P.detach(), Q=Q.detach(), R=R.detach(), S=S.detach())
+        self.state = self.NeuronState(P=P, Q=Q, R=R, S=S)
+        if self.do_detach: 
+            state_detach(self.state)
         return S, U
 
     def get_output_shape(self, input_shape):
         layer = self.base_layer
-        if not isinstance(layer, nn.Conv2d):
-            raise TypeError('You can only get the output shape of Conv2d layers. Please change layer type')
-        im_height = input_shape[-2]
-        im_width = input_shape[-1]
-        height = int((im_height + 2 * layer.padding[0] - layer.dilation[0] *
-                      (layer.kernel_size[0] - 1) - 1) // layer.stride[0] + 1)
-        weight = int((im_width + 2 * layer.padding[1] - layer.dilation[1] *
-                      (layer.kernel_size[1] - 1) - 1) // layer.stride[1] + 1)
-        return [height, weight]
+        if isinstance(layer, nn.Conv2d):
+            im_height = input_shape[-2]
+            im_width = input_shape[-1]
+            height = int((im_height + 2 * layer.padding[0] - layer.dilation[0] *
+                          (layer.kernel_size[0] - 1) - 1) // layer.stride[0] + 1)
+            weight = int((im_width + 2 * layer.padding[1] - layer.dilation[1] *
+                          (layer.kernel_size[1] - 1) - 1) // layer.stride[1] + 1)
+            return [height, weight]
+        else:
+            return layer.out_features
     
     def get_device(self):
         return self.base_layer.weight.device
     
 class LIFLayerVariableTau(LIFLayer):
-    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, random_tau=True):
+    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, random_tau=True, do_detach=True):
         super(LIFLayerVariableTau, self).__init__(layer, alpha, alpharp, wrp, beta, deltat)
         self.random_tau = random_tau
         self.alpha_mean = np.array(self.alpha)
         self.beta_mean = np.array(self.beta)
+        self.do_detach = do_detach
         
     def randomize_tau(self, im_size, tau, std__mean = .25):
         '''
@@ -248,16 +263,19 @@ class LIFLayerVariableTau(LIFLayer):
     def init_parameters(self, Sin_t):
         device = self.get_device()
         input_shape = list(Sin_t.shape)
-        tau_m = 1./(1-self.alpha_mean)
-        tau_s = 1./(1-self.beta_mean)
         if self.random_tau:
-            self.alpha = torch.nn.Parameter(self.randomize_tau(input_shape[1:], tau_m).to(device), requires_grad = True)
-            self.beta  = torch.nn.Parameter(self.randomize_tau(input_shape[1:], tau_s).to(device), requires_grad = True)
+            tau_m = 1./(1-self.alpha_mean)
+            tau_s = 1./(1-self.beta_mean)
+            self.alpha = self.randomize_tau(input_shape[1:], tau_m).to(device)
+            self.beta  = self.randomize_tau(input_shape[1:], tau_s).to(device)
         else:
-            self.alpha = torch.nn.Parameter(torch.ones([input_shape[1:]]).to(device)*self.alpha_mean, requires_grad = True)
-            self.beta  = torch.nn.Parameter(torch.ones([input_shape[1:]]).to(device)*self.beta_mean, requires_grad = True)
+            self.alpha = torch.ones([input_shape[1:]]).to(device)*self.alpha_mean
+            self.beta  = torch.ones([input_shape[1:]]).to(device)*self.beta_mean
+        self.alpha = self.alpha.view(Sin_t.shape[1:])
+        self.beta  = self.beta.view(Sin_t.shape[1:])
         self.tau_m = torch.nn.Parameter(1. / (1 - self.alpha), requires_grad = False)
         self.tau_s = torch.nn.Parameter(1. / (1 - self.beta), requires_grad = False)
+        self.reset_parameters(self.base_layer)
 
 class DECOLLEBase(nn.Module):
     requires_init = True
@@ -292,19 +310,24 @@ class DECOLLEBase(nn.Module):
             return
         for l in self.LIF_layers:
             l.state = None
-        for i in range(max(len(self), burnin)):
-            self.forward(data_batch[:, i, :, :])
+        with torch.no_grad():
+            for i in range(max(len(self), burnin)):
+                self.forward(data_batch[:, i, :, :])
 
     def init_parameters(self, data_batch):
         Sin_t = data_batch[:, 0, :, :]
         s_out, r_out = self.forward(Sin_t)[:2]
-        ins = [Sin_t]+s_out
+        ins = [self.LIF_layers[0].state.Q]+s_out
         for i,l in enumerate(self.LIF_layers):
             l.init_parameters(ins[i])
 
     def reset_lc_parameters(self, layer, lc_ampl):
         stdv = lc_ampl / np.sqrt(layer.weight.size(1))
         layer.weight.data.uniform_(-stdv, stdv)
+        self.reset_lc_bias_parameters(layer,lc_ampl)
+
+    def reset_lc_bias_parameters(self, layer, lc_ampl):
+        stdv = lc_ampl / np.sqrt(layer.weight.size(1))
         if layer.bias is not None:
             layer.bias.data.uniform_(-stdv, stdv)
     
@@ -318,6 +341,31 @@ class DECOLLEBase(nn.Module):
         return self.output_layer.weight.device 
 
 
+class DECOLLELoss(object):
+    def __init__(self, loss_fn, net, reg_l = None, sum_=True):
+        self.loss_fn = loss_fn
+        self.nlayers = len(net)
+        self.reg_l = reg_l
+        if self.reg_l is None: 
+            self.reg_l = [0 for _ in range(self.nlayers)]
+        self.sum_ = sum_
 
+    def __len__(self):
+        return self.nlayers
+
+    def __call__(self, s, r, u, target, mask=1, sum_=True):
+        loss_tv = []
+        for i in range(self.nlayers):
+            uflat = u[i].reshape(u[i].shape[0],-1)
+            loss_tv.append(self.loss_fn(r[i]*mask, target*mask))
+            if self.reg_l[i]>0:
+                reg1_loss = self.reg_l[i]*1e-2*((relu(uflat+.01)*mask)).mean()
+                reg2_loss = self.reg_l[i]*6e-5*relu((mask*(.1-sigmoid(uflat))).mean())
+                loss_tv[-1] += reg1_loss + reg2_loss
+
+        if sum_:
+            return sum(loss_tv)
+        else:
+            return loss_tv
 
 

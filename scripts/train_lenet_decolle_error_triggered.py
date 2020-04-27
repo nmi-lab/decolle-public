@@ -9,7 +9,7 @@
 # Copyright : (c) UC Regents, Emre Neftci
 # Licence : GPLv2
 #----------------------------------------------------------------------------- 
-from decolle.lenet_decolle_model import LenetDECOLLE, DECOLLELoss, LIFLayerVariableTau, LIFLayer
+from decolle.lenet_decolle_model_errortriggered import LenetDECOLLEErrorTriggered, DECOLLELoss, LenetDECOLLE, LIFLayerVariableTau
 from decolle.utils import parse_args, train, test, accuracy, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats
 import datetime, os, socket, tqdm
 import numpy as np
@@ -33,6 +33,8 @@ try:
 except AttributeError:
     create_data = dataset.create_dataloader
 
+
+
 verbose = args.verbose
 
 ## Load Data
@@ -50,7 +52,9 @@ target_batch = torch.Tensor(target_batch).to(device)
 input_shape = data_batch.shape[-3:]
 
 ## Create Model, Optimizer and Loss
-net = LenetDECOLLE( out_channels=params['out_channels'],
+net = LenetDECOLLEErrorTriggered(
+                    out_channels=params['out_channels'],
+                    init_theta = params['init_theta'],
                     Nhid=params['Nhid'],
                     Mhid=params['Mhid'],
                     kernel_size=params['kernel_size'],
@@ -62,24 +66,35 @@ net = LenetDECOLLE( out_channels=params['out_channels'],
                     num_conv_layers=params['num_conv_layers'],
                     num_mlp_layers=params['num_mlp_layers'],
                     lc_ampl=params['lc_ampl'],
-                    lif_layer_type = LIFLayer,
+                    set_point_err=params['error_rate'],
+                    lif_layer_type=LIFLayerVariableTau,
                     method=params['learning_method']).to(device)
 
 if hasattr(params['learning_rate'], '__len__'):
     from decolle.utils import MultiOpt
     opts = []
     for i in range(len(params['learning_rate'])):
-        opts.append(torch.optim.Adamax(net.get_trainable_parameters(i), lr=params['learning_rate'][i], betas=params['betas']))
+        if params['optimizer'] == 'adamax':
+            opts.append(torch.optim.Adamax(net.get_trainable_parameters(i), lr=params['learning_rate'][i], betas=params['betas']))
+        elif params['optimizer'] == 'sgd':
+            opts.append(torch.optim.SGD(net.get_trainable_parameters(i), lr=params['learning_rate'][i]))
+        else:
+            raise NotImplementedError(params['optimizer'] + ' optimizer is not supported')
     opt = MultiOpt(*opts)
 else:
-    opt = torch.optim.Adamax(net.get_trainable_parameters(), lr=params['learning_rate'], betas=params['betas'])
+    if params['optimizer'] == 'adamax':
+        opt = torch.optim.Adamax(net.get_trainable_parameters(), lr=params['learning_rate'], betas=params['betas'])
+    elif params['optimizer'] == 'sgd':
+        opt = torch.optim.SGD(net.get_trainable_parameters(), lr=params['learning_rate'])
+    else:
+        raise NotImplementedError(params['optimizer'] + ' optimizer is not supported')
+print(opt)
 loss = torch.nn.SmoothL1Loss()
 decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=None)
 
 ##Resume if necessary
 if args.resume_from is not None:
-    print("Checkpoint directory " + checkpoint_dir)
-    if not os.path.exists(checkpoint_dir) and not args.no_save:
+    if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     starting_epoch = load_model_from_checkpoint(checkpoint_dir, net, opt)
     print('Learning rate = {}. Resumed from checkpoint'.format(opt.param_groups[-1]['lr']))
@@ -122,8 +137,11 @@ for e in range(starting_epoch , params['num_epochs'] ):
             np.save(log_dir+'/test_acc.npy', np.array(test_acc_hist),)
         
     total_loss, act_rate = train(gen_train, decolle_loss, net, opt, e, params['burnin_steps'], online_update=params['online_update'])
-    if not args.no_save:
+    net.update_thetas()
+    print(net.err_enc_layers)
+    if not args.no_save: 
         for i in range(len(net)):
+            writer.add_scalar('/error_rate/{0}'.format(i), net.err_enc_layers[i].err_rate, e)
             writer.add_scalar('/act_rate/{0}'.format(i), act_rate[i], e)
 
 
