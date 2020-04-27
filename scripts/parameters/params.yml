@@ -1,0 +1,56 @@
+Nhid:
+Mhid:
+- 1000
+- 1000
+- 1000
+alpha:
+- 0.97
+alpharp:
+- 0.65
+batch_size: 72
+beta:
+- 0.92
+betas:
+- 0.0
+- 0.95
+burnin_steps: 60
+chunk_size_test: 300
+chunk_size_train: 300
+dataset: torchneuromorphic.nmnist.nmnist_dataloaders
+deltat: 1000
+input_shape:
+- 2
+- 32
+- 32
+kernel_size:
+- 7
+lc_ampl: .5
+learning_rate: 1.e-4
+loss: smoothL1
+lr_drop_factor: 2
+lr_drop_interval: 20
+num_layers: 3
+num_epochs: 300
+num_conv_layers: 0
+num_mlp_layers: 3
+optimizer: adamax
+out_channels: 10
+pool_size:
+- 2
+- 1
+- 2
+random_tau: true
+reg_l:
+- .0
+- .5
+- .5
+- .5
+test_interval: 1
+init_theta: 
+- 5.e-5
+- 5.e-5
+- 5.e-5
+- 5.e-5
+error_rate: 5.e-2
+online_update: True
+learning_method: 'rtrl'
