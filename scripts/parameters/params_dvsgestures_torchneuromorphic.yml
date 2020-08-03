@@ -2,8 +2,7 @@ Nhid:
 - 64
 - 128
 - 128
-Mhid:
-- 128
+Mhid: []
 alpha:
 - 0.97
 alpharp:
@@ -47,6 +46,6 @@ random_tau: false
 reg_l:
 - .0
 - .0
-- .5
-- .5
+- .0
+- .0
 test_interval: 1

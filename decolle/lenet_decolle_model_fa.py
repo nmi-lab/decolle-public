@@ -32,13 +32,22 @@ class LenetDECOLLEFA(LenetDECOLLE):
                  deltat=1000,
                  lc_ampl=.5,
                  lif_layer_type = LIFLayer,
-                 method='rtrl'):
-
+                 method='rtrl',
+                 with_output_layer=False,
+                 sign_concordant_fa = True):
+        self.sign_concordant_fa = sign_concordant_fa
+        self.with_output_layer = with_output_layer
+        if with_output_layer:
+            Mhid += [out_channels]
+            num_mlp_layers += 1
         num_layers = num_conv_layers + num_mlp_layers
+        self.num_layers = num_layers
         # If only one value provided, then it is duplicated for each layer
         if len(kernel_size) == 1:   kernel_size = kernel_size * num_conv_layers
+        if stride is None: stride=[1]
         if len(stride) == 1:        stride = stride * num_conv_layers
-        if len(pool_size) == 1:     pool_size = pool_size * num_conv_layers
+        if pool_size is None: pool_size = [1]
+        if len(pool_size) == 1: pool_size = pool_size * num_conv_layers
         if len(alpha) == 1:         alpha = alpha * num_layers
         if len(alpharp) == 1:       alpharp = alpharp * num_layers
         if len(beta) == 1:          beta = beta * num_layers
@@ -81,7 +90,7 @@ class LenetDECOLLEFA(LenetDECOLLE):
                              deltat=deltat,
                              do_detach= True if method == 'rtrl' else False)
             pool = nn.MaxPool2d(kernel_size=pool_size[i])
-            readout = nn.FALinear(int(feature_height * feature_width * Nhid[i + 1]), out_channels)
+            readout = FALinear(int(feature_height * feature_width * Nhid[i + 1]), out_channels)
 
             # Readout layer has random fixed weights
             for param in readout.parameters():
@@ -105,14 +114,18 @@ class LenetDECOLLEFA(LenetDECOLLE):
                              alpharp=alpharp[i],
                              deltat=deltat,
                              do_detach= True if method == 'rtrl' else False)
-            readout = nn.FALinear(Mhid[i+1], out_channels)
+            
+            if self.with_output_layer and i+1==num_mlp_layers:
+                readout = nn.Identity()
+                dropout_layer = nn.Identity()
+            else:
+                readout = FALinear(Mhid[i+1], out_channels)
 
-            # Readout layer has random fixed weights
-            for param in readout.parameters():
-                param.requires_grad = False
-            self.reset_lc_parameters(readout, lc_ampl)
-
-            dropout_layer = nn.Dropout(dropout[self.num_conv_layers+i])
+                # Readout layer has random fixed weights
+                for param in readout.parameters():
+                    param.requires_grad = False
+                self.reset_lc_parameters(readout, lc_ampl)
+                dropout_layer = nn.Dropout(dropout[self.num_conv_layers+i])
 
             self.LIF_layers.append(layer)
             self.pool_layers.append(nn.Sequential())
@@ -125,10 +138,17 @@ class LenetDECOLLEFA(LenetDECOLLE):
         if layer.bias is not None:
             layer.bias.data.uniform_(-stdv, stdv)
              
-        if hasattr(layer, 'weight_fa'):
+        if hasattr(layer, 'weight_fa') and self.sign_concordant_fa:
+            #Implements sign concordance
+            print('Using sign-cordant FA')
             layer.weight_fa.data.normal_(1, .5)
             layer.weight_fa.data[layer.weight_fa.data<0] = 0
             layer.weight_fa.data[:] *= layer.weight.data[:]
+        elif hasattr(layer, 'weight_fa'):
+            print('Using non sign-cordant FA')
+            m = layer.weight.data.min()
+            s = layer.weight.data.max()
+            layer.weight_fa.data.uniform_(m, s)
 
 if __name__ == "__main__":
     #Test building network

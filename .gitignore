@@ -1,4 +1,6 @@
 # Byte-compiled / optimized / DLL files
+scripts_kist
+scripts_errtrig/logs
 scripts/logs
 scripts/runs_arg*
 __pycache__/
@@ -13,6 +15,7 @@ __pycache__/
 script[0-9]*.sh
 
 # Distribution / packaging
+trash/
 obj/
 .Python
 c_nsat/data/

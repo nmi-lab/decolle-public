@@ -19,6 +19,6 @@ input_ = torch.zeros([50]+input_shape)
 layer.init_parameters(input_)
 layer(input_)
 
-from decolle.lenet_decolle_model import LenetDECOLLE
-net = LenetDECOLLE(input_shape=input_shape).cuda()
+from decolle.lenet_decolle_model_errortriggered import LenetDECOLLEErrorTriggered
+net = LenetDECOLLEErrorTriggered(input_shape=input_shape).cuda()
 out = net(input_.cuda())

@@ -1,20 +1,20 @@
 #!/bin/python
 #-----------------------------------------------------------------------------
-# File Name : train_lenet_decolle
+# File Name : train_lenet_decolle_fa
 # Author: Emre Neftci
 #
 # Creation Date : Sept 2. 2019
-# Last Modified : 
+# Last Modified :
 #
 # Copyright : (c) UC Regents, Emre Neftci
 # Licence : GPLv2
-#----------------------------------------------------------------------------- 
-from decolle.lenet_decolle_model_fa import LenetDECOLLEFA, DECOLLELoss, LIFLayerVariableTau, LIFLayer
-from decolle.utils import parse_args, train, test, accuracy, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats
+#-----------------------------------------------------------------------------
+from decolle.lenet_decolle_model import LenetDECOLLE, DECOLLELoss, LIFLayerVariableTau, LIFLayer
+from decolle.utils import parse_args, train, test, accuracy, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats, cross_entropy_one_hot
 import datetime, os, socket, tqdm
 import numpy as np
 import torch
-import importlib, math
+import importlib
 
 np.set_printoptions(precision=4)
 args = parse_args('parameters/params.yml')
@@ -40,7 +40,7 @@ gen_train, gen_test = create_data(chunk_size_train=params['chunk_size_train'],
                                   chunk_size_test=params['chunk_size_test'],
                                   batch_size=params['batch_size'],
                                   dt=params['deltat'],
-                                  num_workers=4)
+                                  num_workers=params['num_dl_workers'])
 
 data_batch, target_batch = next(iter(gen_train))
 data_batch = torch.Tensor(data_batch).to(device)
@@ -63,9 +63,8 @@ net = LenetDECOLLEFA( out_channels=params['out_channels'],
                     num_mlp_layers=params['num_mlp_layers'],
                     lc_ampl=params['lc_ampl'],
                     lif_layer_type = LIFLayer,
-                    method=params['learning_method']).to(device)
-
-print(net)
+                    method=params['learning_method'],
+                    with_output_layer=True).to(device)
 
 if hasattr(params['learning_rate'], '__len__'):
     from decolle.utils import MultiOpt
@@ -75,10 +74,22 @@ if hasattr(params['learning_rate'], '__len__'):
     opt = MultiOpt(*opts)
 else:
     opt = torch.optim.Adamax(net.get_trainable_parameters(), lr=params['learning_rate'], betas=params['betas'])
-loss = torch.nn.SmoothL1Loss()
-decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=None)
 
+reg_l = params['reg_l'] if 'reg_l' in params else None
+
+if 'loss_scope' in params and params['loss_scope']=='crbp':
+    from decolle.lenet_decolle_model import CRBPLoss
+    loss = torch.nn.SmoothL1Loss(reduction='none')
+    decolle_loss = CRBPLoss(net = net, loss_fn = loss, reg_l=reg_l)
+else:
+    loss = [torch.nn.SmoothL1Loss() for i in range(len(net))]
+    if net.with_output_layer:
+        loss[-1] = cross_entropy_one_hot
+    decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=reg_l)
+
+##Initialize
 net.init_parameters(data_batch)
+
 ##Resume if necessary
 if args.resume_from is not None:
     print("Checkpoint directory " + checkpoint_dir)
@@ -86,8 +97,6 @@ if args.resume_from is not None:
         os.makedirs(checkpoint_dir)
     starting_epoch = load_model_from_checkpoint(checkpoint_dir, net, opt)
     print('Learning rate = {}. Resumed from checkpoint'.format(opt.param_groups[-1]['lr']))
-
-##Initialize
 
 # Printing parameters
 if args.verbose:
@@ -128,7 +137,3 @@ if not args.no_train:
         if not args.no_save:
             for i in range(len(net)):
                 writer.add_scalar('/act_rate/{0}'.format(i), act_rate[i], e)
-
-
-
-

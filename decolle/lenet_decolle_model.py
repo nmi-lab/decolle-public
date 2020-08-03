@@ -29,19 +29,27 @@ class LenetDECOLLE(DECOLLEBase):
                  deltat=1000,
                  lc_ampl=.5,
                  lif_layer_type = LIFLayer,
-                 method='rtrl'):
+                 method='rtrl',
+                 with_output_layer = False):
 
-        num_layers = num_conv_layers + num_mlp_layers
+        self.with_output_layer = with_output_layer
+        if with_output_layer:
+            Mhid += [out_channels]
+            num_mlp_layers += 1
+        self.num_layers = num_layers = num_conv_layers + num_mlp_layers
         # If only one value provided, then it is duplicated for each layer
         if len(kernel_size) == 1:   kernel_size = kernel_size * num_conv_layers
+        if stride is None: stride=[1]
         if len(stride) == 1:        stride = stride * num_conv_layers
-        if len(pool_size) == 1:     pool_size = pool_size * num_conv_layers
+        if pool_size is None: pool_size = [1]
+        if len(pool_size) == 1: pool_size = pool_size * num_conv_layers
         if len(alpha) == 1:         alpha = alpha * num_layers
         if len(alpharp) == 1:       alpharp = alpharp * num_layers
         if len(beta) == 1:          beta = beta * num_layers
         if len(dropout) == 1:       self.dropout = dropout = dropout * num_layers
         if Nhid is None:          self.Nhid = Nhid = []
         if Mhid is None:          self.Mhid = Mhid = []
+
 
         super(LenetDECOLLE, self).__init__()
 
@@ -102,14 +110,17 @@ class LenetDECOLLE(DECOLLEBase):
                              alpharp=alpharp[i],
                              deltat=deltat,
                              do_detach= True if method == 'rtrl' else False)
-            readout = nn.Linear(Mhid[i+1], out_channels)
-
-            # Readout layer has random fixed weights
-            for param in readout.parameters():
-                param.requires_grad = False
-            self.reset_lc_parameters(readout, lc_ampl)
-
-            dropout_layer = nn.Dropout(dropout[self.num_conv_layers+i])
+            
+            if self.with_output_layer and i+1==num_mlp_layers:
+                readout = nn.Identity()
+                dropout_layer = nn.Identity()
+            else:
+                readout = nn.Linear(Mhid[i+1], out_channels)
+                # Readout layer has random fixed weights
+                for param in readout.parameters():
+                    param.requires_grad = False
+                self.reset_lc_parameters(readout, lc_ampl)
+                dropout_layer = nn.Dropout(dropout[self.num_conv_layers+i])
 
             self.LIF_layers.append(layer)
             self.pool_layers.append(nn.Sequential())
@@ -126,7 +137,10 @@ class LenetDECOLLE(DECOLLEBase):
                 input = input.view(input.size(0), -1)
             s, u = lif(input)
             u_p = pool(u)
-            s_ = smooth_step(u_p)
+            if i+1 == self.num_layers:
+                s_ = sigmoid(u_p)
+            else:
+                s_ = lif.sg_function(u_p)
             sd_ = do(s_)
             r_ = ro(sd_.reshape(sd_.size(0), -1))
             s_out.append(s_) 
@@ -136,6 +150,8 @@ class LenetDECOLLE(DECOLLEBase):
             i+=1
 
         return s_out, r_out, u_out
+    
+    
     
 if __name__ == "__main__":
     #Test building network

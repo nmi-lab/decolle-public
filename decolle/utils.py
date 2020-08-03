@@ -1,7 +1,7 @@
 import argparse
 import torch
 import numpy as np
-from tqdm import tqdm
+import tqdm
 import datetime
 import os
 import socket
@@ -12,6 +12,10 @@ from collections import Counter
 relu = torch.relu
 sigmoid = torch.sigmoid
 
+def cross_entropy_one_hot(input, target):
+    _, labels = target.max(dim=1)
+    return torch.nn.CrossEntropyLoss()(input, labels)
+
 def grad_expand(param_tensor_dict):
     return [t.detach()*k for k,t in param_tensor_dict.items()]
 
@@ -20,18 +24,52 @@ class GradFork(torch.autograd.Function):
     def forward(context, forw_path, *back_path):
         context.save_for_backward(torch.tensor(len(back_path)))
         return forw_path
-    
+
     @staticmethod
     def backward(context, grad_output):
         go = [None] + [grad_output for _ in range(context.saved_tensors[0])]
         print(go)
         return tuple(go)
-    
+
 grad_fork = GradFork().apply
-    
+
+def plot_sample_spatial(data, target, figname):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    image = np.sum(tonp(data), axis=(0,1)) # sum over time and polarity
+    fig, ax = plt.subplots()
+    im = ax.imshow(image)
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar = plt.colorbar(im, cax=cax)
+    ax.set_title('Sample for label {}'.format(tonp(target[0])))
+    plt.savefig(figname)
+
+def plot_sample_temporal(data, target, figname):
+    def smooth(y, box_pts):
+        box = np.ones(box_pts)/box_pts
+        y_smooth = np.convolve(y, box, mode='same')
+        return y_smooth
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    events = np.sum(tonp(data), axis=(1,2,3)) # sum over polarity, x and y
+    fig, ax = plt.subplots()
+    ax.set_title('Sample for label {}'.format(tonp(target[0])))
+    ax.plot(smooth(events, 20)) # smooth the signal with temporal convolution
+    plt.savefig(figname)
 
 def tonp(tensor):
-    return tensor.detach().cpu().numpy()
+    if type(tensor) == type([]):
+        return [t.detach().cpu().numpy() for t in tensor]
+    elif not hasattr(tensor, 'detach'):
+        return tensor
+    else:
+        return tensor.detach().cpu().numpy()
 
 def print_params(params):
     print('Using the following parameters:')
@@ -87,8 +125,7 @@ def prepare_experiment(name, args):
     else:
         log_dir = args.resume_from
         checkpoint_dir = os.path.join(log_dir, 'checkpoints')
-        #params_file = os.path.join(log_dir, 'params.yml')
-        params_file = args.params_file
+        params_file = os.path.join(log_dir, 'params.yml')
         if not args.no_save:
             writer = SummaryWriter(log_dir=log_dir)
         print('Resuming model from {}'.format(log_dir))
@@ -104,9 +141,15 @@ def prepare_experiment(name, args):
     if not 'online_update' in params:
         print('Update method is not explicitly defined, assuming online')
         params['online_update']=True
+        
+    if not 'batches_per_epoch' in params:
+        params['batches_per_epoch']=-1
 
     if not args.no_save: 
         directories = {'log_dir':log_dir, 'checkpoint_dir': checkpoint_dir}
+    elif args.no_save and (args.resume_from is not None):
+        directories = {'log_dir':log_dir, 'checkpoint_dir': checkpoint_dir}
+        writer=None
     else:
         directories = {'log_dir':'', 'checkpoint_dir':''}
         writer=None
@@ -117,12 +160,19 @@ def prepare_experiment(name, args):
         np.random.seed(args.seed)
     return params, writer, directories
 
-def load_model_from_checkpoint(checkpoint_dir, net, opt, device='cuda'):
+def load_model_from_checkpoint(checkpoint_dir, net, opt, n_checkpoint=-1, device='cuda'):
+    '''
+    checkpoint_dir: string containing path to checkpoints, as stored by save_checkpoint
+    net: torch module with state_dict function
+    opt: torch optimizers
+    n_checkpoint: which checkpoint to use. number is not epoch but the order in the ordered list of checkpoint files
+    device: device to use (TODO: get it automatically from net)
+    '''
     starting_epoch = 0
     checkpoint_list = os.listdir(checkpoint_dir)
     if checkpoint_list:
         checkpoint_list.sort()
-        last_checkpoint = checkpoint_list[-1]
+        last_checkpoint = checkpoint_list[n_checkpoint]
         checkpoint = torch.load(os.path.join(checkpoint_dir, last_checkpoint), map_location=device)
         net.load_state_dict(checkpoint['model_state_dict'])
         opt.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -195,7 +245,7 @@ def get_activities(gen_train, decolle_loss, net, opt, epoch, burnin, online_upda
     return total_loss, act_rate, s_hist, r_hist, u_hist 
 
 
-def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True):
+def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True, batches_per_epoch=-1):
     '''
     Trains a DECOLLE network
 
@@ -210,14 +260,18 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True):
     '''
     device = net.get_input_layer_device()
     iter_gen_train = iter(gen_train)
-    total_loss = [0 for i in range(len(net))]
+    total_loss = np.zeros(decolle_loss.num_losses)
     act_rate = [0 for i in range(len(net))]
 
+        
     loss_tv = torch.tensor(0.).to(device)
     net.train()
-    for data_batch, target_batch in tqdm(iter_gen_train, desc='Epoch {}'.format(epoch)):
-        data_batch = torch.Tensor(data_batch).to(device)
-        target_batch = torch.Tensor(target_batch).to(device)
+    dtype = net.LIF_layers[0].base_layer.weight.dtype  
+    batch_iter = 0
+    
+    for data_batch, target_batch in tqdm.tqdm(iter_gen_train, desc='Epoch {}'.format(epoch)):
+        data_batch = torch.Tensor(data_batch).type(dtype).to(device)
+        target_batch = torch.Tensor(target_batch).type(dtype).to(device)
         if len(target_batch.shape) == 2:
             #print('replicate targets for all timesteps')
             target_batch = target_batch.unsqueeze(1)
@@ -231,14 +285,15 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True):
         t_sample = data_batch.shape[1]
         for k in (range(burnin,t_sample)):
             s, r, u = net.forward(data_batch[:, k, :, :])
-            loss_tv += decolle_loss(s, r, u, target=target_batch[:,k,:], mask = loss_mask[:,k,:])
+            loss_ = decolle_loss(s, r, u, target=target_batch[:,k,:], mask = loss_mask[:,k,:], sum_ = False)
+            total_loss += tonp(torch.Tensor(loss_))
+            loss_tv += sum(loss_)
             if online_update: 
                 loss_tv.backward()
                 opt.step()
                 opt.zero_grad()
                 for i in range(len(net)):
                     act_rate[i] += tonp(s[i].mean().data)/t_sample
-                    total_loss[i] += tonp(loss_tv.data)/t_sample
                 loss_tv = torch.tensor(0.).to(device)
         if not online_update:
             loss_tv.backward()
@@ -246,26 +301,29 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True):
             opt.zero_grad()
             for i in range(len(net)):
                 act_rate[i] += tonp(s[i].mean().data)/t_sample
-                total_loss[i] += tonp(loss_tv.data)/t_sample
             loss_tv = torch.tensor(0.).to(device)
+        batch_iter +=1
+        if batches_per_epoch>0:
+            if batch_iter >= batches_per_epoch: break
 
-
+    total_loss /= t_sample
     print('Loss {0}'.format(total_loss))
     print('Activity Rate {0}'.format(act_rate))
     return total_loss, act_rate
 
-def test(gen_test, decolle_loss, net, burnin, print_error=True):
+def test(gen_test, decolle_loss, net, burnin, print_error = True, debug = False):
     net.eval()
+    dtype = net.LIF_layers[0].base_layer.weight.dtype  
     with torch.no_grad():
         device = net.get_input_layer_device()
         iter_data_labels = iter(gen_test)
         test_res = []
         test_labels = []
-        test_loss = np.zeros([len(net)])
+        test_loss = np.zeros([decolle_loss.num_losses])
 
-        for data_batch, target_batch in tqdm(iter_data_labels, desc='Testing'):
-            data_batch = torch.Tensor(data_batch).to(device)
-            target_batch = torch.Tensor(target_batch).to(device)
+        for data_batch, target_batch in tqdm.tqdm(iter_data_labels, desc='Testing'):
+            data_batch = torch.Tensor(data_batch).type(dtype).to(device)
+            target_batch = torch.Tensor(target_batch).type(dtype).to(device)
 
             batch_size = data_batch.shape[0]
             timesteps = data_batch.shape[1]
@@ -292,7 +350,10 @@ def test(gen_test, decolle_loss, net, burnin, print_error=True):
         test_loss /= len(gen_test)
         if print_error:
             print(' '.join(['Error Rate L{0} {1:1.3}'.format(j, 1-v) for j, v in enumerate(test_acc)]))
-    return test_loss, test_acc
+    if debug:
+        return test_loss, test_acc, s, r, u
+    else:
+        return test_loss, test_acc
 
 def accuracy(outputs, targets, one_hot = True):
     if type(targets) is torch.Tensor:

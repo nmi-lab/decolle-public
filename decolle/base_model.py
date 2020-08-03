@@ -22,6 +22,9 @@ from decolle.utils import train, test, accuracy, load_model_from_checkpoint, sav
 
 dtype = torch.float32
 
+sigmoid = nn.Sigmoid()
+relu = nn.ReLU()
+
 class SmoothStep(torch.autograd.Function):
     '''
     Modified from: https://pytorch.org/tutorials/beginner/examples_autograd/two_layer_net_custom_function.html
@@ -30,7 +33,7 @@ class SmoothStep(torch.autograd.Function):
     @staticmethod
     def forward(aux, x):
         aux.save_for_backward(x)
-        return (x >=0).float()
+        return (x >=0).type(x.dtype)
 
     def backward(aux, grad_output):
         # grad_input = grad_output.clone()
@@ -39,10 +42,21 @@ class SmoothStep(torch.autograd.Function):
         grad_input[input <= -.5] = 0
         grad_input[input > .5] = 0
         return grad_input
+    
+class SigmoidStep(torch.autograd.Function):
+    @staticmethod
+    def forward(aux, x):
+        aux.save_for_backward(x)
+        return (x >=0).type(x.dtype)
+
+    def backward(aux, grad_output):
+        # grad_input = grad_output.clone()
+        input, = aux.saved_tensors
+        res = torch.sigmoid(input)
+        return res*(1-res)*grad_output
 
 smooth_step = SmoothStep().apply
-sigmoid = nn.Sigmoid()
-
+smooth_sigmoid = SigmoidStep().apply
 
 class LinearFAFunction(torch.autograd.Function):
     '''from https://github.com/L0SG/feedback-alignment-pytorch/'''
@@ -97,6 +111,13 @@ class FALinear(nn.Module):
         #torch.nn.init.kaiming_uniform(self.weight)
         #torch.nn.init.kaiming_uniform(self.weight_fa)
         #torch.nn.init.constant(self.bias, 1)
+        # does not need gradient
+        self.weight_fa = torch.nn.Parameter(torch.FloatTensor(output_features, input_features), requires_grad=False)
+
+        # weight initialization
+        #torch.nn.init.kaiming_uniform(self.weight)
+        #torch.nn.init.kaiming_uniform(self.weight_fa)
+        #torch.nn.init.constant(self.bias, 1)
 
     def forward(self, input):
         return LinearFAFunction.apply(input, self.weight, self.weight_fa, self.bias)
@@ -107,6 +128,7 @@ def state_detach(state):
 
 class LIFLayer(nn.Module):
     NeuronState = namedtuple('NeuronState', ['P', 'Q', 'R', 'S'])
+    sg_function = smooth_step
 
     def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, do_detach=True):
         '''
@@ -191,6 +213,7 @@ class LIFLayer(nn.Module):
             raise Exception('Unhandled base layer type')
 
     def init_state(self, Sin_t):
+        dtype = Sin_t.dtype
         device = self.base_layer.weight.device
         input_shape = list(Sin_t.shape)
         out_ch = self.get_out_channels(self.base_layer)
@@ -203,19 +226,16 @@ class LIFLayer(nn.Module):
     def init_parameters(self, Sin_t):
         self.reset_parameters(self.base_layer)
 
-
-            
-
     def forward(self, Sin_t):
         if self.state is None:
             self.init_state(Sin_t)
 
         state = self.state
         Q = self.beta * state.Q + self.tau_s * Sin_t
-        P = self.alpha * state.P + self.tau_m * state.Q  # TODO check with Emre: Q or state.Q?
+        P = self.alpha * state.P + self.tau_m * state.Q  
         R = self.alpharp * state.R - state.S * self.wrp
         U = self.base_layer(P) + R
-        S = smooth_step(U)
+        S = self.sg_function(U)
         self.state = self.NeuronState(P=P, Q=Q, R=R, S=S)
         if self.do_detach: 
             state_detach(self.state)
@@ -237,12 +257,48 @@ class LIFLayer(nn.Module):
     def get_device(self):
         return self.base_layer.weight.device
     
+class LIFLayerNonorm(LIFLayer):
+    sg_function  = smooth_step
+    def forward(self, Sin_t):
+        if self.state is None:
+            self.init_state(Sin_t)
+
+        state = self.state
+        Q = self.beta * state.Q + Sin_t
+        P = self.alpha * state.P + state.Q  # TODO check with Emre: Q or state.Q?
+        R = self.alpharp * state.R - state.S * self.wrp
+        #Pc = (P>self.cutoff).type(P.dtype)/self.cutoff
+        #Pd = (P-Pc).detach()+Pc
+        U = self.base_layer(P) + R
+        S = self.sg_function(U)
+        self.state = self.NeuronState(P=P, Q=Q, R=R, S=S)
+        if self.do_detach: 
+            state_detach(self.state)
+        return S, U
+    
+    def reset_parameters(self, layer):
+        if type(layer) == nn.Conv2d:
+            conv_layer = layer
+            n = conv_layer.in_channels
+            for k in conv_layer.kernel_size:
+                n *= k
+            stdv = 1. / np.sqrt(n) / 250 * self.tau_s * self.tau_m
+            conv_layer.weight.data.uniform_(-stdv * 1e-2, stdv * 1e-2)
+            if conv_layer.bias is not None:
+                conv_layer.bias.data.uniform_(-stdv, stdv)
+        elif hasattr(layer, 'out_features'): 
+            layer.weight.data[:]*=0
+            if layer.bias is not None:
+                layer.bias.data.uniform_(-1e-3,1e-3)
+        else:
+            warning.warn('Unhandled data type, not resetting parameters')
+
 class LIFLayerVariableTau(LIFLayer):
     def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, random_tau=True, do_detach=True):
         super(LIFLayerVariableTau, self).__init__(layer, alpha, alpharp, wrp, beta, deltat)
         self.random_tau = random_tau
-        self.alpha_mean = np.array(self.alpha)
-        self.beta_mean = np.array(self.beta)
+        self.alpha_mean = self.alpha
+        self.beta_mean = self.beta
         self.do_detach = do_detach
         
     def randomize_tau(self, im_size, tau, std__mean = .25):
@@ -254,11 +310,13 @@ class LIFLayerVariableTau(LIFLayer):
         :param mean__std: mean to standard deviation
         :return: 1/Dt*tau
         '''
-        tau = np.random.normal(1, std__mean, size=im_size)*tau
-        tau[tau<5]=5
-        tau[tau>=200]=200
+        tau_v = torch.empty(im_size)
+        tau_v.normal_(1, std__mean)
+        tau_v.data[:] *= tau 
+        tau_v[tau_v<5]=5
+        tau_v[tau_v>=200]=200
         #tau = np.broadcast_to(tau, (im_size[0], im_size[1], channels)).transpose(2, 0, 1)
-        return torch.Tensor(1 - 1. / tau)
+        return torch.Tensor(1 - 1. / tau_v)    
     
     def init_parameters(self, Sin_t):
         device = self.get_device()
@@ -269,8 +327,10 @@ class LIFLayerVariableTau(LIFLayer):
             self.alpha = self.randomize_tau(input_shape[1:], tau_m).to(device)
             self.beta  = self.randomize_tau(input_shape[1:], tau_s).to(device)
         else:
-            self.alpha = torch.ones([input_shape[1:]]).to(device)*self.alpha_mean
-            self.beta  = torch.ones([input_shape[1:]]).to(device)*self.beta_mean
+            tau_m = 1./(1-self.alpha_mean)
+            tau_s = 1./(1-self.beta_mean)
+            self.alpha = torch.ones(input_shape[1:]).to(device)*self.alpha_mean.to(device)
+            self.beta  = torch.ones(input_shape[1:]).to(device)*self.beta_mean.to(device)
         self.alpha = self.alpha.view(Sin_t.shape[1:])
         self.beta  = self.beta.view(Sin_t.shape[1:])
         self.tau_m = torch.nn.Parameter(1. / (1 - self.alpha), requires_grad = False)
@@ -342,26 +402,28 @@ class DECOLLEBase(nn.Module):
 
 
 class DECOLLELoss(object):
-    def __init__(self, loss_fn, net, reg_l = None, sum_=True):
+    def __init__(self, loss_fn, net, reg_l = None):
         self.loss_fn = loss_fn
         self.nlayers = len(net)
+        self.num_losses = len([l for l in loss_fn if l is not None])
+        assert len(loss_fn)==self.nlayers, "Mismatch is in number of loss functions and layers. You need to specify one loss functino per layer"
         self.reg_l = reg_l
         if self.reg_l is None: 
             self.reg_l = [0 for _ in range(self.nlayers)]
-        self.sum_ = sum_
 
     def __len__(self):
         return self.nlayers
 
     def __call__(self, s, r, u, target, mask=1, sum_=True):
         loss_tv = []
-        for i in range(self.nlayers):
-            uflat = u[i].reshape(u[i].shape[0],-1)
-            loss_tv.append(self.loss_fn(r[i]*mask, target*mask))
-            if self.reg_l[i]>0:
-                reg1_loss = self.reg_l[i]*1e-2*((relu(uflat+.01)*mask)).mean()
-                reg2_loss = self.reg_l[i]*6e-5*relu((mask*(.1-sigmoid(uflat))).mean())
-                loss_tv[-1] += reg1_loss + reg2_loss
+        for i,loss_layer in enumerate(self.loss_fn):
+            if loss_layer is not None:
+                uflat = u[i].reshape(u[i].shape[0],-1)
+                loss_tv.append(loss_layer(r[i]*mask, target*mask))
+                if self.reg_l[i]>0:
+                    reg1_loss = self.reg_l[i]*1e-2*((relu(uflat+.01)*mask)).mean()
+                    reg2_loss = self.reg_l[i]*6e-5*relu((mask*(.1-sigmoid(uflat))).mean())
+                    loss_tv[-1] += reg1_loss + reg2_loss
 
         if sum_:
             return sum(loss_tv)

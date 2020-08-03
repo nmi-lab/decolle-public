@@ -11,7 +11,9 @@
 #----------------------------------------------------------------------------- 
 from decolle.base_model import *
 from .utils import *
+from decolle.experimental.boxlif import BoxLIFLayer
 from decolle.lenet_decolle_model import LenetDECOLLE
+from decolle.lenet_decolle_model_fa import LenetDECOLLEFA
 from simple_pid import PID
 
 class BipolarEventEncode(torch.autograd.Function):
@@ -26,6 +28,7 @@ class BipolarEventEncode(torch.autograd.Function):
 
         # all of the logic of FA resides in this one line
         # calculate the gradient of input with fixed fa tensor, rather than the "correct" model weight
+        grad_output = grad_output.clone()
         grad_output[grad_output>0] = grad_output[grad_output>0]//theta
         grad_output[grad_output<0] = (-((-grad_output[grad_output<0])//theta))
         #g = torch.sign(g)
@@ -44,7 +47,7 @@ class ErrorLayerBipolar(nn.Module):
         self.t_count = torch.tensor(0)
         self.relu = nn.ReLU()
         self.set_point = set_point
-        self.pid = PID(2e-6, .0, .0, setpoint = set_point)
+        self.pid = PID(.5e-6, .0, .0, setpoint = set_point)
         self.last_err_rate = 0
 
     def forward(self, input):
@@ -62,18 +65,19 @@ class ErrorLayerBipolar(nn.Module):
     @property
     def err_rate(self):
         if self.t_count==0: return torch.zeros_like(self.err_count)
-        return self.err_count/self.t_count
+        return np.maximum(self.err_count/self.t_count,1e-32)
         
     def update_theta(self):
         c = self.pid(self.err_rate).to(self.theta.device)
         self.theta -= c
+        self.theta.data[self.theta.data<1e-16] = 1e-16 
         self.init()
     
     def __repr__(self):
         return 'ErrorLayerBipolar err_rate {0:1.3} theta {1:1.3}'.format(self.last_err_rate.mean(), self.theta.mean())
 
-class LenetDECOLLEErrorTriggered(LenetDECOLLE):
-    def __init__(self, init_theta, set_point_err, lif_layer_type=LIFLayer, *args, **kwargs):
+class LenetDECOLLEErrorTriggered(LenetDECOLLEFA):
+    def __init__(self, init_theta, set_point_err, lif_layer_type=LIFLayer, sign_concordant_fa = True, *args, **kwargs):
         super(LenetDECOLLEErrorTriggered, self).__init__(lif_layer_type=lif_layer_type, *args, **kwargs)
 
         self.err_enc_layers = nn.ModuleList()
