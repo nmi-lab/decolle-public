@@ -1,0 +1,57 @@
+Nhid:
+- 64
+- 128
+- 128
+Mhid: 
+- 0
+alpha:
+- 0.97
+alpharp:
+- 0.65
+batch_size: 72
+beta:
+- 0.92
+betas:
+- 0.0
+- 0.95
+burnin_steps: 100
+chunk_size_test: 1800
+chunk_size_train: 500
+dataset: torchneuromorphic.dvs_gestures.dvsgestures_dataloaders
+deltat: 1000
+error_rate: 5.e-2
+init_theta: 
+- 1.e-06
+- 1.e-06
+- 1.e-06
+input_shape:
+- 2
+- 32
+- 32
+kernel_size:
+- 7
+lc_ampl: 0.5
+learning_rate: 1.0e-09
+learning_method: 'rtrl'
+loss: smoothL1 #Not used
+lr_drop_factor: 5
+lr_drop_interval: 30
+num_conv_layers: 3
+num_mlp_layers: 0
+num_layers: 3
+num_epochs: 200
+num_dl_workers: 4
+optimizer: sgd 
+out_channels: 11
+online_update: True
+pool_size:
+- 2
+- 1
+- 2
+reg_l:
+- .0
+- .0
+- .0
+- .0
+test_interval: 1
+
