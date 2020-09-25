@@ -49,29 +49,35 @@ class LenetDELLE(DECOLLEBase):
         self.local = True if method is 'rtrl' else False
         self.lc_ampl = lc_ampl
         num_layers = num_conv_layers + num_mlp_layers
+
         # If only one value provided, then it is duplicated for each layer
         if len(kernel_size) == 1:   kernel_size = kernel_size * num_conv_layers
+        if stride is None: stride=[1]
         if len(stride) == 1:        stride = stride * num_conv_layers
-        if len(pool_size) == 1:     pool_size = pool_size * num_conv_layers
+        if pool_size is None: pool_size = [1]
+        if len(pool_size) == 1: pool_size = pool_size * num_conv_layers
         if len(dropout) == 1:       self.dropout = dropout = dropout * num_layers
-        if len(Nhid) == 1:          self.Nhid = Nhid = Nhid * num_conv_layers
-        if len(Mhid) == 1:          self.Mhid = Mhid = Mhid * num_mlp_layers
+        if Nhid is None:          self.Nhid = Nhid = []
+        if Mhid is None:          self.Mhid = Mhid = []
+
 
         super(LenetDELLE, self).__init__()
 
         # Computing padding to preserve feature size
         padding = (np.array(kernel_size) - 1) // 2  # TODO try to remove padding
 
-        feature_height = input_shape[1]
-        feature_width = input_shape[2]
+
 
         # THe following lists need to be nn.ModuleList in order for pytorch to properly load and save the state_dict
         self.pool_layers = nn.ModuleList()
         self.dropout_layers = nn.ModuleList()
-
+        self.input_shape = input_shape
         Nhid = [input_shape[0]] + Nhid
         self.num_conv_layers = num_conv_layers
         self.num_mlp_layers = num_mlp_layers
+
+        feature_height = self.input_shape[1]
+        feature_width = self.input_shape[2]
 
         for i in range(num_conv_layers):
             feature_height //= pool_size[i]

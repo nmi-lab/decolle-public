@@ -266,7 +266,10 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True, 
         
     loss_tv = torch.tensor(0.).to(device)
     net.train()
-    dtype = net.LIF_layers[0].base_layer.weight.dtype  
+    if hasattr(net.LIF_layers[0], 'base_layer'):
+        dtype = net.LIF_layers[0].base_layer.weight.dtype
+    else:
+        dtype = net.LIF_layers[0].weight.dtype
     batch_iter = 0
     
     for data_batch, target_batch in tqdm.tqdm(iter_gen_train, desc='Epoch {}'.format(epoch)):
@@ -313,7 +316,10 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True, 
 
 def test(gen_test, decolle_loss, net, burnin, print_error = True, debug = False):
     net.eval()
-    dtype = net.LIF_layers[0].base_layer.weight.dtype  
+    if hasattr(net.LIF_layers[0], 'base_layer'):
+        dtype = net.LIF_layers[0].base_layer.weight.dtype
+    else:
+        dtype = net.LIF_layers[0].weight.dtype
     with torch.no_grad():
         device = net.get_input_layer_device()
         iter_data_labels = iter(gen_test)

@@ -167,7 +167,7 @@ class LIFLayer(nn.Module):
 
     @staticmethod
     def reset_parameters(layer):
-        if type(layer) == nn.Conv2d:
+        if hasattr(layer, 'out_channels'):
             conv_layer = layer
             n = conv_layer.in_channels
             for k in conv_layer.kernel_size:
@@ -181,7 +181,7 @@ class LIFLayer(nn.Module):
             if layer.bias is not None:
                 layer.bias.data.uniform_(-1e-3,1e-3)
         else:
-            warning.warn('Unhandled data type, not resetting parameters')
+            warnings.warn('Unhandled layer type, not resetting parameters')
     
     @staticmethod
     def get_out_channels(layer):
@@ -243,7 +243,7 @@ class LIFLayer(nn.Module):
 
     def get_output_shape(self, input_shape):
         layer = self.base_layer
-        if isinstance(layer, nn.Conv2d):
+        if hasattr(layer, 'out_channels'):
             im_height = input_shape[-2]
             im_width = input_shape[-1]
             height = int((im_height + 2 * layer.padding[0] - layer.dilation[0] *
@@ -277,7 +277,7 @@ class LIFLayerNonorm(LIFLayer):
         return S, U
     
     def reset_parameters(self, layer):
-        if type(layer) == nn.Conv2d:
+        if hasattr(layer, 'out_channels'):
             conv_layer = layer
             n = conv_layer.in_channels
             for k in conv_layer.kernel_size:
@@ -291,7 +291,7 @@ class LIFLayerNonorm(LIFLayer):
             if layer.bias is not None:
                 layer.bias.data.uniform_(-1e-3,1e-3)
         else:
-            warning.warn('Unhandled data type, not resetting parameters')
+            warnings.warn('Unhandled data type, not resetting parameters')
 
 class LIFLayerVariableTau(LIFLayer):
     def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, random_tau=True, do_detach=True):
@@ -361,6 +361,17 @@ class DECOLLEBase(nn.Module):
             return chain(*[l.parameters() for l in self.LIF_layers])
         else:
             return self.LIF_layers[layer].parameters()
+
+    def get_trainable_named_parameters(self, layer=None):
+        if layer is None:
+            params = dict()
+            for k,p in self.named_parameters():
+                if p.requires_grad:
+                    params[k]=p
+
+            return params
+        else:
+            return self.LIF_layers[layer].named_parameters()
 
     def init(self, data_batch, burnin):
         '''

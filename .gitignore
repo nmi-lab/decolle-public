@@ -1,8 +1,11 @@
-# Byte-compiled / optimized / DLL files
 scripts_kist
 scripts_errtrig/logs
 scripts/logs
 scripts/runs_arg*
+scripts/data
+nohup.out
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 .*.sw*
