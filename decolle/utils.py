@@ -19,6 +19,7 @@ def cross_entropy_one_hot(input, target):
 def grad_expand(param_tensor_dict):
     return [t.detach()*k for k,t in param_tensor_dict.items()]
 
+##!--Flagged for removal
 class GradFork(torch.autograd.Function):
     @staticmethod
     def forward(context, forw_path, *back_path):
@@ -32,6 +33,7 @@ class GradFork(torch.autograd.Function):
         return tuple(go)
 
 grad_fork = GradFork().apply
+##--!
 
 def plot_sample_spatial(data, target, figname):
     import matplotlib

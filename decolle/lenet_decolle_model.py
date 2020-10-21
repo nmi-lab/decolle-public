@@ -46,6 +46,7 @@ class LenetDECOLLE(DECOLLEBase):
         if len(alpha) == 1:         alpha = alpha * num_layers
         if len(alpharp) == 1:       alpharp = alpharp * num_layers
         if len(beta) == 1:          beta = beta * num_layers
+        if not hasattr(dropout, '__len__'): dropout = [dropout]
         if len(dropout) == 1:       self.dropout = dropout = dropout * num_layers
         if Nhid is None:          self.Nhid = Nhid = []
         if Mhid is None:          self.Mhid = Mhid = []
@@ -100,7 +101,10 @@ class LenetDECOLLE(DECOLLEBase):
             self.readout_layers.append(readout)
             self.dropout_layers.append(dropout_layer)
 
-        mlp_in = int(feature_height * feature_width * Nhid[-1])
+        if num_conv_layers == 0: #No convolutional layer
+            mlp_in = int(np.prod(self.input_shape))
+        else:
+            mlp_in = int(feature_height * feature_width * Nhid[-1])
         Mhid = [mlp_in] + Mhid
         for i in range(num_mlp_layers):
             base_layer = nn.Linear(Mhid[i], Mhid[i+1])
@@ -150,6 +154,33 @@ class LenetDECOLLE(DECOLLEBase):
             i+=1
 
         return s_out, r_out, u_out
+
+class TimeWrappedLenetDECOLLE(LenetDECOLLE):
+    def forward(self, Sin):
+        t_sample = Sin.shape[1]
+        out = []
+        for t in (range(0,t_sample)):
+            Sin_t = Sin[:,t]
+            out.append(super().forward(Sin_t))
+        return out
+
+    def init(self, data_batch, burnin):
+        '''
+        Necessary to reset the state of the network whenever a new batch is presented
+        '''
+        if self.requires_init is False:
+            return
+        for l in self.LIF_layers:
+            l.state = None
+        with torch.no_grad():
+            self.forward(data_batch[:, burnin:])
+
+    def init_parameters(self, data_batch):
+        Sin = data_batch[:, :, :, :]
+        s_out = self.forward(Sin)[0][0]
+        ins = [self.LIF_layers[0].state.Q]+s_out
+        for i,l in enumerate(self.LIF_layers):
+            l.init_parameters(ins[i])
     
     
     

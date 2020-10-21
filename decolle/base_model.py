@@ -417,7 +417,7 @@ class DECOLLELoss(object):
         self.loss_fn = loss_fn
         self.nlayers = len(net)
         self.num_losses = len([l for l in loss_fn if l is not None])
-        assert len(loss_fn)==self.nlayers, "Mismatch is in number of loss functions and layers. You need to specify one loss functino per layer"
+        assert len(loss_fn)==self.nlayers, "Mismatch is in number of loss functions and layers. You need to specify one loss function per layer"
         self.reg_l = reg_l
         if self.reg_l is None: 
             self.reg_l = [0 for _ in range(self.nlayers)]

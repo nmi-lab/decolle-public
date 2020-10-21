@@ -49,6 +49,10 @@ target_batch = torch.Tensor(target_batch).to(device)
 #d, t = next(iter(gen_train))
 input_shape = data_batch.shape[-3:]
 
+#Backward compatibility
+if 'dropout' not in params.keys():
+    params['dropout'] = [.5]
+
 ## Create Model, Optimizer and Loss
 net = LenetDECOLLE( out_channels=params['out_channels'],
                     Nhid=params['Nhid'],
@@ -58,6 +62,7 @@ net = LenetDECOLLE( out_channels=params['out_channels'],
                     input_shape=params['input_shape'],
                     alpha=params['alpha'],
                     alpharp=params['alpharp'],
+                    dropout=params['dropout'],
                     beta=params['beta'],
                     num_conv_layers=params['num_conv_layers'],
                     num_mlp_layers=params['num_mlp_layers'],
