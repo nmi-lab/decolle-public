@@ -200,11 +200,17 @@ class LIFLayer(nn.Module):
     @staticmethod
     def get_out_shape(layer, input_shape):
         if hasattr(layer, 'out_channels'):
+            if type(layer) is torch.nn.modules.conv.Conv1d:
+                convModel = 1
+            elif type(layer) is torch.nn.modules.conv.Conv2d:
+                convModel = 2
+
             return get_output_shape(input_shape, 
                                     kernel_size=layer.kernel_size,
-                                    stride = layer.stride,
-                                    padding = layer.padding,
-                                    dilation = layer.dilation)
+                                    stride=layer.stride,
+                                    padding=layer.padding,
+                                    dilation=layer.dilation,
+                                    convModel=convModel)
         elif hasattr(layer, 'out_features'): 
             return []
         elif hasattr(layer, 'get_out_shape'): 
@@ -231,10 +237,15 @@ class LIFLayer(nn.Module):
             self.init_state(Sin_t)
 
         state = self.state
+        Sin_t = Sin_t.to(self.state.Q.device)
         Q = self.beta * state.Q + self.tau_s * Sin_t
         P = self.alpha * state.P + self.tau_m * state.Q  
         R = self.alpharp * state.R - state.S * self.wrp
-        U = self.base_layer(P) + R
+
+        if len(self.base_layer.weight.shape) == len(P.shape):
+            U = self.base_layer(P) + R
+        elif len(self.base_layer.weight.shape) == len(P.shape) + 1:
+            U = self.base_layer(P.unsqueeze(len(P.shape))) + R
         S = self.sg_function(U)
         self.state = self.NeuronState(P=P, Q=Q, R=R, S=S)
         if self.do_detach: 
@@ -244,13 +255,20 @@ class LIFLayer(nn.Module):
     def get_output_shape(self, input_shape):
         layer = self.base_layer
         if hasattr(layer, 'out_channels'):
-            im_height = input_shape[-2]
-            im_width = input_shape[-1]
-            height = int((im_height + 2 * layer.padding[0] - layer.dilation[0] *
-                          (layer.kernel_size[0] - 1) - 1) // layer.stride[0] + 1)
-            weight = int((im_width + 2 * layer.padding[1] - layer.dilation[1] *
-                          (layer.kernel_size[1] - 1) - 1) // layer.stride[1] + 1)
-            return [height, weight]
+            if len(input_shape) == 1:
+                im_length = input_shape[-1]
+                length = int((im_length + 2 * layer.padding - layer.dilation *
+                              (layer.kernel_size - 1) - 1) // layer.stride + 1)
+
+                return length
+            else:
+                im_height = input_shape[-2]
+                im_width = input_shape[-1]
+                height = int((im_height + 2 * layer.padding[0] - layer.dilation[0] *
+                              (layer.kernel_size[0] - 1) - 1) // layer.stride[0] + 1)
+                weight = int((im_width + 2 * layer.padding[1] - layer.dilation[1] *
+                              (layer.kernel_size[1] - 1) - 1) // layer.stride[1] + 1)
+                return [height, weight]
         else:
             return layer.out_features
     
@@ -350,6 +368,7 @@ class DECOLLEBase(nn.Module):
         return len(self.LIF_layers)
 
     def forward(self, input):
+        print('Forward base_model NotImplemented')
         raise NotImplemented('')
     
     @property
@@ -383,10 +402,10 @@ class DECOLLEBase(nn.Module):
             l.state = None
         with torch.no_grad():
             for i in range(max(len(self), burnin)):
-                self.forward(data_batch[:, i, :, :])
+                self.forward(data_batch[:, i])    # , :, :])
 
     def init_parameters(self, data_batch):
-        Sin_t = data_batch[:, 0, :, :]
+        Sin_t = data_batch[:, 0] #, :, :]
         s_out, r_out = self.forward(Sin_t)[:2]
         ins = [self.LIF_layers[0].state.Q]+s_out
         for i,l in enumerate(self.LIF_layers):
