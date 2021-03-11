@@ -9,10 +9,10 @@
 # Copyright : (c) UC Regents, Emre Neftci
 # Licence : GPLv2
 # -----------------------------------------------------------------------------
-from .base_model import *
+from .base_model_MN import *
 
 
-class LenetDECOLLE1DMN(DECOLLEBase):
+class LenetDECOLLE1DMN(DECOLLEBaseMN):
     def __init__(self,
                  input_shape,
                  Nhid=[1],

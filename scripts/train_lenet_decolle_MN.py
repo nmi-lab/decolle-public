@@ -21,8 +21,8 @@ def main():
     np.set_printoptions(precision=4)
     # args = parse_args('parameters/params.yml')
     # args = parse_args('parameters/params_MN.yml')
-    # args = parse_args('parameters/params_MN_multipar.yml')
-    args = parse_args('parameters/params_MN_multipar2.yml')
+    args = parse_args('parameters/params_MN_multipar.yml')
+    # args = parse_args('parameters/params_MN_multipar2.yml')
     device = args.device
 
 
@@ -71,20 +71,22 @@ def main():
                                 verbose = args.verbose
 
                                 ## Load Data
-                                if 'overlap_size_train_perc' in params.keys():
-                                    gen_train, gen_test = create_data(chunk_size_train=T_tr,
-                                                                      chunk_size_test=T_te,
-                                                                      overlap_size_train_perc=ov,
-                                                                      overlap_size_test_perc=ov,
-                                                                      batch_size=params['batch_size'],
-                                                                      dt=params['deltat'],
-                                                                      num_workers=params['num_dl_workers'])
-                                else:
-                                    gen_train, gen_test = create_data(chunk_size_train=T_tr,
-                                                                      chunk_size_test=T_te,
-                                                                      batch_size=params['batch_size'],
-                                                                      dt=params['deltat'],
-                                                                      num_workers=params['num_dl_workers'])
+                                # if 'overlap_size_train_perc' in params.keys():
+                                gen_train, gen_test = create_data(chunk_size_train=T_tr,
+                                                                  chunk_size_test=T_te,
+                                                                  overlap_size_train_perc=ov,
+                                                                  overlap_size_test_perc=ov,
+                                                                  muscle_to_exclude=params['muscle_to_exclude'],
+                                                                  batch_size=params['batch_size'],
+                                                                  dt=params['deltat'],
+                                                                  num_workers=params['num_dl_workers'])
+
+                                # else:
+                                #     gen_train, gen_test = create_data(chunk_size_train=T_tr,
+                                #                                       chunk_size_test=T_te,
+                                #                                       batch_size=params['batch_size'],
+                                #                                       dt=params['deltat'],
+                                #                                       num_workers=params['num_dl_workers'])
 
                                 data_batch, target_batch = next(iter(gen_train))
                                 data_batch = torch.Tensor(data_batch).to(device)
@@ -206,6 +208,7 @@ def main():
                                         if not args.no_save:
                                             for i in range(len(net)):
                                                 writer.add_scalar('/act_rate/{0}'.format(i), act_rate[i], e)
+                                                writer.add_scalar('/total_loss/{0}'.format(i), total_loss[i], e)
                                     starting_epoch = load_model_from_checkpoint(checkpoint_dir, net, opt)
 
 if __name__ == '__main__':
