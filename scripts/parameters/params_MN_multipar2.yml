@@ -1,23 +1,16 @@
 Nhid:
 - 16
-- 0
+- 32
 - 0
 Nhid_step:
-- 0
-- 16
 - 32
-Mhid:
-- 32
-- 0
-Mhid_step:
-- 0
-- 16
+Mhid: []
+Mhid_step: []
 alpha:
 - 0.65
 alpharp:
 - 0.5
 alpha_step:
-- 0.15
 - 0.3
 batch_size: 60
 beta:

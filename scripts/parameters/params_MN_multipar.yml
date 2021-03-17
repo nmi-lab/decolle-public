@@ -82,5 +82,12 @@ init_theta:
 - 5.e-5
 - 5.e-5
 - 5.e-5
+muscle_to_exclude:
+- 9
+- 10
+- 11
+- 12
+- 13
+- 14
 online_update: True
 learning_method: 'rtrl'

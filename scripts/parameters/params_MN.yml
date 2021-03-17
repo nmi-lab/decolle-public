@@ -20,8 +20,7 @@ chunk_size_train: 400
 overlap_size_train_perc: 0.5
 dataset: torchneuromorphic.motoneurons.mn_dataloaders
 deltat: 1000
-input_shape:
-- 0
+input_shape: []
 kernel_size:
 - 3
 lc_ampl: 0.5
@@ -52,5 +51,6 @@ init_theta:
 - 5.e-5
 - 5.e-5
 - 5.e-5
+muscle_to_exclude: []
 online_update: True
 learning_method: 'rtrl'

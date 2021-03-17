@@ -15,7 +15,9 @@ betas:
 - 0.95
 burnin_steps: 60
 chunk_size_test: 300
+overlap_size_test_perc: 0.5
 chunk_size_train: 300
+overlap_size_train_perc: 0.5
 dataset: torchneuromorphic.nmnist.nmnist_dataloaders
 deltat: 1000
 input_shape:
@@ -52,5 +54,6 @@ init_theta:
 - 5.e-5
 - 5.e-5
 - 5.e-5
+muscle_to_exclude: []
 online_update: True
 learning_method: 'rtrl'

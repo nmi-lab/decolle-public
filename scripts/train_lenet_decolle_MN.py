@@ -20,8 +20,8 @@ import importlib
 def main():
     np.set_printoptions(precision=4)
     # args = parse_args('parameters/params.yml')
-    # args = parse_args('parameters/params_MN.yml')
-    args = parse_args('parameters/params_MN_multipar.yml')
+    args = parse_args('parameters/params_MN.yml')
+    # args = parse_args('parameters/params_MN_multipar.yml')
     # args = parse_args('parameters/params_MN_multipar2.yml')
     device = args.device
 
