@@ -35,6 +35,45 @@ mapping = {0: 'index_flx',
 # muscles = ['FDI', 'IIDI', 'IIIDI', 'IVDI', 'ADM', 'FPB', 'APB', 'OPP', 'ECU', 'EDC', 'ECR', 'FCU', 'FDS', 'FCR']
 fsamp = 2048 # The sample frequency of the original signal
 
+class ToCountFrameMN(object):
+    """Convert Address Events to Binary tensor.
+
+    Converts a numpy.ndarray (T x H x W x C) to a torch.FloatTensor of shape (T x C x H x W) in the range [0., 1., ...]
+    """
+    def __init__(self, T=500, size=[2, 32, 32]):
+        self.T = T
+        self.size = size
+
+    def __call__(self, tmad):
+
+        ts = range(0, self.T)
+        chunks = np.zeros([len(ts)] + self.size, dtype='int8')
+
+        times = tmad[:,0].astype(int)
+        if len(times) > 0 :
+            t_start = times[0]
+            t_end = times[-1]
+            if tmad.shape[1] == 2:
+                addrs = tmad[:, 1].astype(int)
+            else:
+                addrs = tmad[:,1:]
+
+            idx_start = 0
+            idx_end = 0
+            for i, t in enumerate(ts):
+                idx_end += find_first(times[idx_end:], t+1)
+                if idx_end > idx_start:
+                    ee = addrs[idx_start:idx_end]
+                    if len(ee.shape) == 1:
+                        i_pol_x_y = (i, ee)
+                    elif ee.shape[1] == 3:
+                        i_pol_x_y = (i, ee[:, 0], ee[:, 1], ee[:, 2])
+                    np.add.at(chunks, i_pol_x_y, 1)
+                idx_start = idx_end
+        return chunks
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(T={0})'.format(self.T)
 
 class MNDataset(NeuromorphicDataset):
 
@@ -241,7 +280,7 @@ class MNDataset(NeuromorphicDataset):
 
             transform = Compose([
                 Downsample(factor=[downsampfact, 1]),# , 1, 1]), Address has only one coordinate,i.e. the MN number
-                ToCountFrame(T=self.chunk_size , size=[self.nMN]), #,])
+                ToCountFrameMN(T=self.chunk_size , size=[self.nMN]), #,])
                 ToTensor()])
 
             target_transform = Compose([Repeat(self.chunk_size), toOneHot(len(mapping))])
@@ -249,7 +288,7 @@ class MNDataset(NeuromorphicDataset):
 
             transform = Compose([
                 Downsample(factor=[downsampfact, 1]),# , 1, 1]), Address has only one coordinate,i.e. the MN number
-                ToCountFrame(T=self.chunk_size , size=[self.nMN]), #,])
+                ToCountFrameMN(T=self.chunk_size , size=[self.nMN]), #,])
                 ToTensor()])
 
             target_transform = Compose([Repeat(self.chunk_size), toOneHot(len(mapping))])
