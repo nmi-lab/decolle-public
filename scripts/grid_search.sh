@@ -49,7 +49,7 @@ for filename in params_to_test/*; do
         # Running one simulation
         echo "Running on GPU number ${max_j}"
         [ ! -d "/path/to/dir" ] && mkdir -p logs/$1
-        CUDA_VISIBLE_DEVICES=${max_j} python -u multilayer.py --params_file ${filename} --save_dir $1 >& logs/$1/`date +%d-%m-%Y_%H-%M-%S.log` &
+        CUDA_VISIBLE_DEVICES=${max_j} python -u train_lenet_decolle_MN_multirun.py --params_file ${filename} --save_dir $1 >& logs/$1/`date +%d-%m-%Y_%H-%M-%S.log` &
 	sleep 10
 
     else

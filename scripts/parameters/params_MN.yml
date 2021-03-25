@@ -18,7 +18,7 @@ chunk_size_test: 400
 overlap_size_test_perc: 0.5
 chunk_size_train: 400
 overlap_size_train_perc: 0.5
-dataset: torchneuromorphic.motoneurons.mn_dataloaders
+dataset: mn_dataloaders
 deltat: 1000
 input_shape: []
 kernel_size:
