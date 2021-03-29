@@ -1,7 +1,7 @@
 Nhid:
-- 32
 - 64
-- 16
+- 128
+- 128
 Mhid: []
 alpha:
 - 0.97
@@ -9,24 +9,24 @@ alpharp:
 - 0.65
 batch_size: 60
 beta:
-- 0.92
+- 0.98
 betas:
 - 0.0
 - 0.95
 burnin_steps: 60
-chunk_size_test: 200
+chunk_size_test: 500
 overlap_size_test_perc: 0.5
-chunk_size_train: 200
+chunk_size_train: 500
 overlap_size_train_perc: 0.5
 dataset: mn_dataloaders
 deltat: 1000
 input_shape: []
 kernel_size:
 - 3
-lc_ampl: 0.5
-learning_rate: 1.e-7
+lc_ampl: 0
+learning_rate: 1.e-4
 loss: smoothL1
-lr_drop_factor: 5
+lr_drop_factor: 2
 lr_drop_interval: 30
 num_layers: 3
 num_epochs: 100
