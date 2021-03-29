@@ -14,9 +14,9 @@ betas:
 - 0.0
 - 0.95
 burnin_steps: 60
-chunk_size_test: 400
+chunk_size_test: 200
 overlap_size_test_perc: 0.5
-chunk_size_train: 400
+chunk_size_train: 200
 overlap_size_train_perc: 0.5
 dataset: mn_dataloaders
 deltat: 1000
