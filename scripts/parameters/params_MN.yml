@@ -23,7 +23,7 @@ deltat: 1000
 input_shape: []
 kernel_size:
 - 3
-lc_ampl: 0
+lc_ampl: 0.5
 learning_rate: 1.e-4
 loss: smoothL1
 lr_drop_factor: 2
@@ -39,7 +39,7 @@ pool_size:
 - 2
 - 1
 - 2
-random_tau: true
+random_tau: False
 reg_l:
 - .0
 - .0
