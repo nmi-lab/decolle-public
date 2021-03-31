@@ -24,7 +24,7 @@ input_shape: []
 kernel_size:
 - 3
 lc_ampl: 0.5
-learning_rate: 1.e-4
+learning_rate: 1.e-6
 loss: smoothL1
 lr_drop_factor: 2
 lr_drop_interval: 30
