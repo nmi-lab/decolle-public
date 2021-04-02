@@ -4,12 +4,12 @@ Nhid:
 - 128
 Mhid: []
 alpha:
-- 0.75
+- 0.97
 alpharp:
 - 0.65
 batch_size: 60
 beta:
-- 0.98
+- 0.97
 betas:
 - 0.0
 - 0.95
