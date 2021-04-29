@@ -43,14 +43,28 @@ def main():
 
     ## Load Data
 
-    gen_train, gen_test = create_data(chunk_size_train=params['chunk_size_train'],
+    gen_train, gen_test = create_data(root=params['filename'],
+                                      chunk_size_train=params['chunk_size_train'],
                                       chunk_size_test=params['chunk_size_test'],
                                       overlap_size_train_perc=params['overlap_size_train_perc'],
                                       overlap_size_test_perc=params['overlap_size_test_perc'],
+                                      perc_test_norm=params['perc_test_norm'],
                                       muscle_to_exclude=params['muscle_to_exclude'],
+                                      class_to_include=params['class_to_include'],
+                                      thr_firing_excl_slice=params['thr_firing_excl_slice'],
                                       batch_size=params['batch_size'],
                                       dt=params['deltat'],
                                       num_workers=params['num_dl_workers'])
+
+    # gen_train, gen_test = create_data(root=params['filename'],
+    #                                   chunk_size_train=params['chunk_size_train'],
+    #                                   chunk_size_test=params['chunk_size_test'],
+    #                                   overlap_size_train_perc=params['overlap_size_train_perc'],
+    #                                   overlap_size_test_perc=params['overlap_size_test_perc'],
+    #                                   muscle_to_exclude=params['muscle_to_exclude'],
+    #                                   batch_size=params['batch_size'],
+    #                                   dt=params['deltat'],
+    #                                   num_workers=params['num_dl_workers'])
 
 
     data_batch, target_batch = next(iter(gen_train))

@@ -20,17 +20,18 @@ from torchneuromorphic.transforms import *
 # from .create_hdf5 import create_events_hdf5
 import scipy.io
 from scipy import signal
+import random
 
 
-mapping = {0: 'index_flx',
-           1: 'index_ext',
-           2: 'middle_flx',
-           3: 'middle_ext',
-           4: 'ring_flx',
-           5: 'little_flx',
-           6: 'little_ext',
-           7: 'thumb_flx',
-           8: 'thumb_ext'}
+# mapping = {0: 'index_flx',
+#            1: 'index_ext',
+#            2: 'middle_flx',
+#            3: 'middle_ext',
+#            4: 'ring_flx',
+#            5: 'little_flx',
+#            6: 'little_ext',
+#            7: 'thumb_flx',
+#            8: 'thumb_ext'}
 
 # muscles = ['FDI', 'IIDI', 'IIIDI', 'IVDI', 'ADM', 'FPB', 'APB', 'OPP', 'ECU', 'EDC', 'ECR', 'FCU', 'FDS', 'FCR']
 fsamp = 2048 # The sample frequency of the original signal
@@ -86,11 +87,24 @@ class MNDataset(NeuromorphicDataset):
             download_and_create=True,
             chunk_size=500,
             overlap_perc=0,
+            perc_test_norm=0.1,
             muscle_to_exclude=[],
+            class_to_include=[],
+            thr_firing_excl_slice=[],
+            slices_to_take=[],
             dt=1000):
 
+        # TODO: 1. randomised assignation of test and train portions, after slicing dataset (indicate from outside percentage Tr/Te)
+        # DONE
+        # TODO: 2. option for class exclusion
+        # DONE, to improve
+        # TODO: 3. threshold of firings to exclude a slice (imposed by outside)
+        # DONE
+        # TODO: 4.  substitute len(mapping) and self.nclasses, self.num_classes
+        # DONE
+
         self.n = 0
-        self.nclasses = self.num_classes = 9
+        # self.nclasses = self.num_classes = 9
         self.download_and_create = download_and_create
         self.root = root
         self.train = train
@@ -100,13 +114,16 @@ class MNDataset(NeuromorphicDataset):
         self.key_counter = 0
         self.batch_counter = 0
         self.muscle2Excl = muscle_to_exclude
+        self.perc_test_norm = perc_test_norm
+        self.class_to_include = class_to_include
+        self.thr_firing_excl_slice = thr_firing_excl_slice
 
         ## 1. LOAD THE FILE
         matfile = scipy.io.loadmat(root)
         self.data = matfile['e']['mu'][0, 0][0, 0][1]
         self.muscles = []
         for iii in range(0, matfile['e']['muscles'][0, 0].shape[0]):
-            # TODO: : Insert here the condition for muscles to exclude
+            # TODO: : Insert here the condition for muscles to exclude (DONE)
             if (np.argwhere(np.array(self.muscle2Excl) == iii + 1)).shape[0] == 0:
                 self.muscles.append(matfile['e']['muscles'][0, 0][iii, 0][0])
 
@@ -116,7 +133,7 @@ class MNDataset(NeuromorphicDataset):
         print('Number of motor neurons per muscle :')
         self.nMN = 0
         for iii in range(0, self.data.shape[0]):
-            # TODO: : Insert here the condition for muscles to exclude
+            # TODO: : Insert here the condition for muscles to exclude (DONE)
             if (np.argwhere(np.array(self.muscle2Excl)==iii+1)).shape[0] == 0:
                 if self.data[iii, 0].shape[1] > 0:
                     self.nMN += self.data[iii, 0].shape[0]
@@ -124,7 +141,85 @@ class MNDataset(NeuromorphicDataset):
                 else:
                     print(self.muscles[iii] + ', ' + str(self.data[iii, 0].shape[1]) + ' MNs')
 
-        ## 2. Create transform
+        ## 2. Extract here labels and keys
+
+        # TODO : dynamic assignation test and train portions (DONE)
+        # self.labelsTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 2]-1
+        # self.labelsTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 2]-1
+        # self.keysTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 0:2]
+        # self.keysTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 0:2]
+        KEYS = matfile['e']['Keys'][0, 0]
+
+        labels = KEYS[:, 2] - 1*(min(KEYS[:, 2]) == 1)
+        keys = KEYS[:, 0:2]
+
+        # ## Exclude classes at this level
+        # if self.class_to_include is list:
+        #     for ccc in range(0,len(self.class_to_include)):
+        #         KEYS[KEYS[:, 2]==self.class_to_include[ccc]]=[]
+        # Take only the classes you need
+
+        self.nclasses = max(labels) + 1*(min(labels) == 0)
+        #TODO: create new labels which go continuously from 0 to newNClasses (DONE)
+        keys = np.array(keys)
+        if type(self.class_to_include) is list:
+            if not(len(self.class_to_include) == 0):
+                self.nclasses = 0
+                l = []
+                k = np.zeros([0,keys.shape[1]])
+                for nc in self.class_to_include:
+                    # l.extend(labels[labels == nc])
+                    l.extend([int(self.nclasses) for iii in range(0, np.sum([labels == nc]))])
+                    k = np.row_stack([k, keys[labels == nc,: ]])
+                    self.nclasses+=1
+                labels = np.array(l)
+                keys = k.astype(int)
+
+        self.repWidth = int(np.fix(np.mean(np.diff(keys, 1, 1))))
+        self.SF = self.dt /self.fsamp
+        self.nSlicesPerRep = int(np.fix((self.repWidth-(self.chunk_size*self.ov)/self.SF) / ((self.chunk_size*(1-self.ov))/self.SF)))
+
+        self.n = int(self.nSlicesPerRep * labels.shape[0])
+        labels = np.repeat(labels, int(self.nSlicesPerRep))
+        if not (type(slices_to_take) is np.ndarray):
+            slices_to_take = np.arange(0, self.n)
+        elif slices_to_take.shape[0] == 0:
+            slices_to_take = np.arange(0, self.n)
+
+        if self.train:
+            ## Create TRAIN DATASET HERE
+
+
+            # Reshuffling train/test here!!!
+            random.shuffle(slices_to_take)
+            self.sliceTrain = slices_to_take[0:int(np.fix((1-self.perc_test_norm)*self.n))]
+            self.sliceTest = slices_to_take[int(np.fix((1 - self.perc_test_norm) * self.n)):]
+            self.labelsTrain = labels[self.sliceTrain]
+            self.n = self.labelsTrain.shape[0]
+
+            tmp = []
+            for indk, kkk in enumerate(keys):
+                for iii in range(0,self.nSlicesPerRep):
+                    # if sum(self.sliceTrain == indk*(self.nSlicesPerRep-1)+iii) > 0:
+                    tmp.append([kkk[0]+int(np.fix(iii*(self.chunk_size*(1-self.ov)/self.SF))) , kkk[0]+int(np.fix(self.chunk_size/self.SF+iii*(self.chunk_size*(1-self.ov)/self.SF)))])
+            tmp = np.array(tmp)
+            self.keysTrain = tmp[self.sliceTrain]
+
+        else:
+            ## Create TEST DATASET HERE
+            self.labelsTest = labels[slices_to_take]
+            self.n = self.labelsTest.shape[0]
+
+            tmp = []
+            for indk, kkk in enumerate(keys):
+                for iii in range(0,self.nSlicesPerRep):
+                    # if sum(slices_to_take == indk*(self.nSlicesPerRep-1)+iii) > 0:
+                    tmp.append([kkk[0]+int(np.fix(iii*(self.chunk_size*(1-self.ov)/self.SF))) , kkk[0]+int(np.fix(self.chunk_size/self.SF+iii*(self.chunk_size*(1-self.ov)/self.SF)))])
+            tmp = np.array(tmp)
+            self.keysTest = tmp[slices_to_take]
+
+
+        ## 3. Create transform
         transform, target_transform = self.createTransform(train)
 
         super(MNDataset, self).__init__(
@@ -132,36 +227,6 @@ class MNDataset(NeuromorphicDataset):
             transform=transform,
             target_transform=target_transform)
 
-        ## 3. Extract here labels and keys
-        # TODO : dynamic assignation test and train portions
-        self.labelsTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 2]-1
-        self.labelsTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 2]-1
-        self.keysTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 0:2]
-        self.keysTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 0:2]
-
-        self.repWidth = int(np.fix(np.mean(np.diff(self.keysTrain, 1, 1))))
-        # self.nSlicesPerRep = np.fix(self.repWidth/(self.chunk_size/1000*self.fsamp))
-        self.SF = self.dt /self.fsamp
-        self.nSlicesPerRep = int(np.fix((self.repWidth-(self.chunk_size*self.ov)/self.SF) / ((self.chunk_size*(1-self.ov))/self.SF)))
-
-        if train:
-            self.n = int(self.nSlicesPerRep*self.labelsTrain.shape[0])
-            self.labelsTrain = np.repeat(self.labelsTrain, int(self.nSlicesPerRep))
-            # self.keysTrain = np.repeat(self.keysTrain, int(self.nSlicesPerRep),axis=0)
-            tmp = []
-            for kkk in self.keysTrain:
-                for iii in range(0,self.nSlicesPerRep):
-                    tmp.append([kkk[0]+int(np.fix(iii*(self.chunk_size*(1-self.ov)/self.SF))) , kkk[0]+int(np.fix(self.chunk_size/self.SF+iii*(self.chunk_size*(1-self.ov)/self.SF)))])
-            self.keysTrain = tmp
-        else:
-            self.n = int(self.nSlicesPerRep * self.labelsTest.shape[0])
-            self.labelsTest = np.repeat(self.labelsTest, int(self.nSlicesPerRep))
-            # self.keysTest = np.repeat(self.keysTest, int(self.nSlicesPerRep), axis=0)
-            tmp = []
-            for kkk in self.keysTest:
-                for iii in range(0,self.nSlicesPerRep):
-                    tmp.append([kkk[0]+int(np.fix(iii*(self.chunk_size*(1-self.ov)/self.SF))) , kkk[0]+int(np.fix(self.chunk_size/self.SF+iii*(self.chunk_size*(1-self.ov)/self.SF)))])
-            self.keysTest = tmp
         # # f = h5py.File(root, 'r', swmr=True, libver="latest")
         #
         # # Commented (Ctrl+1) by Simone Tanzarella 19/01/2021
@@ -237,6 +302,7 @@ class MNDataset(NeuromorphicDataset):
         times = []
         addr = []
         mmm = 0 # Counter of motor neuron number -> Address, start from 0
+        NUMFIRINGS = 0 # Count number total firings in the chunk
 
         # Run across muscles
         for iii in range(0, len(self.muscles)):
@@ -250,15 +316,17 @@ class MNDataset(NeuromorphicDataset):
                             # Equivalent of "get_tmad_slice", but we can try also with that function
                             times.extend(self.data[iii, 0][jjj, 0][(self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T))])
                             addr.extend([mmm for _ in range(0, np.sum((self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T))))])
+                            NUMFIRINGS += np.sum((self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T)))
                             mmm += 1
 
-            # else:
-            #     print(self.muscles[iii]+' '+'empty')
-        ADDR = np.array(addr)
-        addr = ADDR[np.argsort(times)] #.tolist()
-        times = np.sort(times) #.tolist()
-        if len(times) > 0 :
-            times -= times[0]
+        # Remove here times, addr items less than firing thr
+        if NUMFIRINGS >= np.fix(self.chunk_size / 1000 * self.thr_firing_excl_slice * self.nMN / 10):
+            ADDR = np.array(addr)
+            addr = ADDR[np.argsort(times)] #.tolist()
+            times = np.sort(times) #.tolist()
+            if len(times) > 0 :
+                times -= times[0]
+
         tmad = np.column_stack([times, addr]).astype(int)
         # self.key_counter += 1
 
@@ -282,7 +350,7 @@ class MNDataset(NeuromorphicDataset):
                 ToCountFrameMN(T=self.chunk_size , size=[self.nMN]), #,])
                 ToTensor()])
 
-            target_transform = Compose([Repeat(self.chunk_size), toOneHot(len(mapping))])
+            target_transform = Compose([Repeat(self.chunk_size), toOneHot(self.nclasses)])
         else:
 
             transform = Compose([
@@ -290,7 +358,7 @@ class MNDataset(NeuromorphicDataset):
                 ToCountFrameMN(T=self.chunk_size , size=[self.nMN]), #,])
                 ToTensor()])
 
-            target_transform = Compose([Repeat(self.chunk_size), toOneHot(len(mapping))])
+            target_transform = Compose([Repeat(self.chunk_size), toOneHot(self.nclasses)])
 
         return transform, target_transform
 
@@ -359,20 +427,31 @@ def create_datasets(
         chunk_size_test=300,
         overlap_size_train_perc = 0,
         overlap_size_test_perc = 0,
+        perc_test_norm=0.1,
         muscle_to_exclude=[],
+        class_to_include=[],
+        thr_firing_excl_slice=[],
         ds=1,
         dt=1000):
 
     train_ds = MNDataset(root, train=True,
                              chunk_size=chunk_size_train,
                              overlap_perc=overlap_size_train_perc,
+                             perc_test_norm=perc_test_norm,
                              muscle_to_exclude=muscle_to_exclude,
+                             class_to_include=class_to_include,
+                             thr_firing_excl_slice=thr_firing_excl_slice,
+                             slices_to_take=[],
                              dt=dt)
 
     test_ds = MNDataset(root, train=False,
-                            chunk_size=chunk_size_test,
-                            overlap_perc=overlap_size_test_perc,
+                            chunk_size=chunk_size_train,
+                            overlap_perc=overlap_size_train_perc,
+                            perc_test_norm=perc_test_norm,
                             muscle_to_exclude=muscle_to_exclude,
+                            class_to_include=class_to_include,
+                            thr_firing_excl_slice=thr_firing_excl_slice,
+                            slices_to_take=train_ds.sliceTest,
                             dt=dt)
 
 # train_ds = MNDataset(root, train=True,
@@ -397,18 +476,24 @@ def create_dataloader(
         chunk_size_test=300,
         overlap_size_train_perc = 0,
         overlap_size_test_perc = 0,
-        muscle_to_exclude = [],
+        perc_test_norm=0.1,
+        muscle_to_exclude=[],
+        class_to_include=[],
+        thr_firing_excl_slice=[],
         ds=1,
         dt=1000,
         **dl_kwargs):
     train_d, test_d = create_datasets(
-        root='data/motoneurons/MNDS_KaJu.mat',
+        root=root,
         batch_size=batch_size,
         chunk_size_train=chunk_size_train,
-        chunk_size_test=chunk_size_test,
+        chunk_size_test=chunk_size_train,
         overlap_size_train_perc=overlap_size_train_perc,
-        overlap_size_test_perc=overlap_size_test_perc,
+        overlap_size_test_perc=overlap_size_train_perc,
+        perc_test_norm=perc_test_norm,
         muscle_to_exclude=muscle_to_exclude,
+        class_to_include=class_to_include,
+        thr_firing_excl_slice=thr_firing_excl_slice,
         ds=ds,
         dt=dt)
 

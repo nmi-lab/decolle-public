@@ -480,3 +480,15 @@ class MultiOpt(object):
     @property
     def param_groups(self):
         return [self.multioptparam]
+
+def quantifyBatch(data_batch,target_batch):
+    for jjj in range(0, data_batch.size()[0]):  # Batches
+        for iii in range(0, data_batch.size()[2]):  # Neurons
+            # for iii in range(0, data_batch.size()[3]):
+            S[iii, jjj] = int(data_batch[jjj, :, iii].sum())
+            # S[iii, jjj] = int(data_batch[jjj, :, :, iii].sum().sum().sum())
+            if S[iii, jjj] > 0:
+                D[iii, jjj] = int(np.diff(np.where(data_batch[jjj, :, iii] == 1)).sum() / S[iii, jjj])
+                # D[iii, jjj] = int(np.diff(np.where(data_batch[jjj, :, :, iii] == 1),axis=0).sum().sum().sum() / S[iii, jjj])
+
+            T[iii, jjj] = int(np.array(np.where(target_batch[jjj, iii, :] == 1)))
