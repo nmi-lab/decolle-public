@@ -117,6 +117,7 @@ class MNDataset(NeuromorphicDataset):
         self.perc_test_norm = perc_test_norm
         self.class_to_include = class_to_include
         self.thr_firing_excl_slice = thr_firing_excl_slice
+        self.equalize = False
 
         ## 1. LOAD THE FILE
         matfile = scipy.io.loadmat(root)
@@ -153,6 +154,12 @@ class MNDataset(NeuromorphicDataset):
         labels = KEYS[:, 2] - 1*(min(KEYS[:, 2]) == 1)
         keys = KEYS[:, 0:2]
 
+        m = []
+        for nc in range(0, max(labels)+1):
+            m.append(np.sum(labels == nc))
+        if min(m) < max(m):
+            self.equalize = True
+
         # ## Exclude classes at this level
         # if self.class_to_include is list:
         #     for ccc in range(0,len(self.class_to_include)):
@@ -160,8 +167,9 @@ class MNDataset(NeuromorphicDataset):
         # Take only the classes you need
 
         self.nclasses = max(labels) + 1*(min(labels) == 0)
-        #TODO: create new labels which go continuously from 0 to newNClasses (DONE)
+        #Create new labels which go continuously from 0 to newNClasses
         keys = np.array(keys)
+        # CLASS SELECTION HERE
         if type(self.class_to_include) is list:
             if not(len(self.class_to_include) == 0):
                 self.nclasses = 0
@@ -174,50 +182,62 @@ class MNDataset(NeuromorphicDataset):
                     self.nclasses+=1
                 labels = np.array(l)
                 keys = k.astype(int)
-
+        # Set number of slices to cut
         self.repWidth = int(np.fix(np.mean(np.diff(keys, 1, 1))))
         self.SF = self.dt /self.fsamp
         self.nSlicesPerRep = int(np.fix((self.repWidth-(self.chunk_size*self.ov)/self.SF) / ((self.chunk_size*(1-self.ov))/self.SF)))
 
         self.n = int(self.nSlicesPerRep * labels.shape[0])
         labels = np.repeat(labels, int(self.nSlicesPerRep))
-        if not (type(slices_to_take) is np.ndarray):
-            slices_to_take = np.arange(0, self.n)
-        elif slices_to_take.shape[0] == 0:
-            slices_to_take = np.arange(0, self.n)
 
         if self.train:
             ## Create TRAIN DATASET HERE
 
-
-            # Reshuffling train/test here!!!
+            # Prepare reshuffling train/test here!!!
+            if not (type(slices_to_take) is np.ndarray):
+                slices_to_take = np.arange(0, self.n)
+            elif slices_to_take.shape[0] == 0:
+                slices_to_take = np.arange(0, self.n)
             random.shuffle(slices_to_take)
             self.sliceTrain = slices_to_take[0:int(np.fix((1-self.perc_test_norm)*self.n))]
             self.sliceTest = slices_to_take[int(np.fix((1 - self.perc_test_norm) * self.n)):]
-            self.labelsTrain = labels[self.sliceTrain]
-            self.n = self.labelsTrain.shape[0]
 
+            # SLICING HERE
             tmp = []
             for indk, kkk in enumerate(keys):
                 for iii in range(0,self.nSlicesPerRep):
-                    # if sum(self.sliceTrain == indk*(self.nSlicesPerRep-1)+iii) > 0:
                     tmp.append([kkk[0]+int(np.fix(iii*(self.chunk_size*(1-self.ov)/self.SF))) , kkk[0]+int(np.fix(self.chunk_size/self.SF+iii*(self.chunk_size*(1-self.ov)/self.SF)))])
             tmp = np.array(tmp)
+
+            # Reshuffling
+            self.labelsTrain = labels[self.sliceTrain]
+            self.n = self.labelsTrain.shape[0]
             self.keysTrain = tmp[self.sliceTrain]
+
+            if self.equalize:
+                # TODO: Equalize number of slices per class
+                self.keysTrain, self.labelsTrain = equalizeClasses(self.keysTrain, self.labelsTrain)
+                self.n = self.labelsTrain.shape[0]
 
         else:
             ## Create TEST DATASET HERE
-            self.labelsTest = labels[slices_to_take]
-            self.n = self.labelsTest.shape[0]
 
+            # SLICING HERE
             tmp = []
             for indk, kkk in enumerate(keys):
                 for iii in range(0,self.nSlicesPerRep):
-                    # if sum(slices_to_take == indk*(self.nSlicesPerRep-1)+iii) > 0:
                     tmp.append([kkk[0]+int(np.fix(iii*(self.chunk_size*(1-self.ov)/self.SF))) , kkk[0]+int(np.fix(self.chunk_size/self.SF+iii*(self.chunk_size*(1-self.ov)/self.SF)))])
             tmp = np.array(tmp)
+
+            # Reshuffling
+            self.labelsTest = labels[slices_to_take]
+            self.n = self.labelsTest.shape[0]
             self.keysTest = tmp[slices_to_take]
 
+            if self.equalize:
+                # TODO: Equalize number of slices per class
+                self.keysTest, self.labelsTest = equalizeClasses(self.keysTest, self.labelsTest)
+                self.n = self.labelsTest.shape[0]
 
         ## 3. Create transform
         transform, target_transform = self.createTransform(train)
@@ -227,26 +247,6 @@ class MNDataset(NeuromorphicDataset):
             transform=transform,
             target_transform=target_transform)
 
-        # # f = h5py.File(root, 'r', swmr=True, libver="latest")
-        #
-        # # Commented (Ctrl+1) by Simone Tanzarella 19/01/2021
-        # with h5py.File(root, 'r', swmr=True, libver="latest") as f:
-        #     try:
-        #         if train:
-        #             self.n = f['extra'].attrs['Ntrain']
-        #             self.keys = f['extra']['train_keys'][()]
-        #             self.keys_by_label = f['extra']['train_keys_by_label'][()]
-        #         else:
-        #             self.n = f['extra'].attrs['Ntest']
-        #             self.keys = f['extra']['test_keys'][()]
-        #             self.keys_by_label = f['extra']['test_keys_by_label'][()]
-        #             self.keys_by_label[:, :] -= self.keys_by_label[0, 0]  # normalize
-        #     except AttributeError:
-        #         print(
-        #             'Attribute not found in hdf5 file. You may be using an old hdf5 build. Delete {0} and run again'.format(
-        #                 root))
-        #         raise
-
     def download(self):
         isexisting = super(MNDataset, self).download()
 
@@ -254,19 +254,7 @@ class MNDataset(NeuromorphicDataset):
         return self.n
 
     def __getitem__(self, key):
-        # HERE THE CALL FUNCTION 'ITER' applyied to this object will iter key counter
-        # # Important to open and close in getitem to enable num_workers>0
-        # with h5py.File(self.root, 'r', swmr=True, libver="latest") as f:
-        #     if self.train:
-        #         key = f['extra']['train_keys'][key]
-        #     else:
-        #         key = f['extra']['test_keys'][key]
-        #     data, target = sample(
-        #         f,
-        #         key,
-        #         T=self.chunk_size * self.dt)
 
-        # TODO : debug this code, do you really need "transform"? How to adapt it?
         if self.train:
             target = self.labelsTrain[key]
             key = self.keysTrain[key]
@@ -290,15 +278,6 @@ class MNDataset(NeuromorphicDataset):
 
     def sample(self, key, T=300, ov=0):
 
-        # dset = hdf5_file['data'][str(key)]
-        # label = dset['labels'][()]
-        # tend = dset['times'][-1]
-        # start_time = 0
-        # ha = dset['times'][()]
-        #
-        # tmad = get_tmad_slice(dset['times'][()], dset['addrs'][()], start_time, T * 1000)
-        # tmad[:, 0] -= tmad[0, 0]
-        # print(key)
         times = []
         addr = []
         mmm = 0 # Counter of motor neuron number -> Address, start from 0
@@ -334,13 +313,6 @@ class MNDataset(NeuromorphicDataset):
 
     def createTransform(self, train):
 
-        # size = [self.nMN], the total number of motor neurons
-
-        # Since we express T in milliseconds, the downsampling factor is the sample frequency,
-        # i.e. the number of samples acquired in a second of the original EMG signal (then decomposed
-        # to find motor neuron firing times), divided by 1000 (dt) since we would need to express in millisecond the firing times,
-        # instead of seconds,
-        # which would be if we don't divide the downsampling factor per 1000 (i.e. re-oversample of 1000).
         downsampfact = self.fsamp / self.dt
 
         if train:
@@ -362,63 +334,75 @@ class MNDataset(NeuromorphicDataset):
 
         return transform, target_transform
 
-    def sparse_data_generator(X, y, batch_size, nb_steps, nb_units, shuffle=True):
-        """ This generator takes datasets in analog format and generates spiking network input as sparse tensors.
-        Args:
-            X: The data ( sample x event x 2 ) the last dim holds (time,neuron) tuples
-            y: The labels
-        """
-
-        labels_ = np.array(y, dtype=np.float)
-        number_of_batches = len(X) // batch_size
-        sample_index = np.arange(len(X))
-
-        # compute discrete firing times
-        tau_eff = 20e-3 / time_step
-        firing_times = np.array(current2firing_time(X, tau=tau_eff, tmax=nb_steps), dtype=np.float)
-        unit_numbers = np.arange(nb_units[1] * nb_units[2])
-        # unit_numbers_2 = np.arange(nb_units[2])
-
-        if shuffle:
-            np.random.shuffle(sample_index)
-
-        # total_batch_count = 0
-        counter = 0
-        while counter < number_of_batches:
-            batch_index = sample_index[batch_size * counter:batch_size * (counter + 1)]
-
-            coo = [[] for i in range(5)]
-            for bc, idx in enumerate(batch_index):
-                for n_mat in range(0, nb_units[0]):
-                    c = firing_times[idx] < nb_steps
-                    times, units = firing_times[idx][c], unit_numbers[c]
-
-                    cols = np.fix((units + 1) / nb_units[1] - 1).astype(int)  # cols
-                    rows = (np.mod((units), nb_units[1])).astype(int)  # rows
-
-                    batch = [bc for _ in range(len(times))]
-                    matrices = [n_mat for _ in range(len(times))]
-                    coo[0].extend(batch)
-                    coo[1].extend(times)
-                    coo[2].extend(matrices)
-                    coo[3].extend(rows)
-                    coo[4].extend(cols)
-
-            i = torch.LongTensor(coo).to(device)
-            v = torch.FloatTensor(np.ones(len(coo[0]))).to(device)
-
-            X_batch = torch.sparse.FloatTensor(i, v, torch.Size(
-                [batch_size, nb_steps, nb_units[0], nb_units[1], nb_units[2]])).to(device)
-            # y_batch = torch.tensor(labels_[batch_index],device=device)
-            LL = []
-            for lab in labels_[batch_index]:
-                LL.append([[lab]])
-            y_batch = torch.tensor(np.repeat(np.array(LL), 300, axis=1), device=device)
-
-            yield X_batch.detach().cpu().to_dense().numpy(), y_batch.detach().cpu().numpy()
-
-            counter += 1
-
+    # def sparse_data_generator(X, y, batch_size, nb_steps, nb_units, shuffle=True):
+    #     """ This generator takes datasets in analog format and generates spiking network input as sparse tensors.
+    #     Args:
+    #         X: The data ( sample x event x 2 ) the last dim holds (time,neuron) tuples
+    #         y: The labels
+    #     """
+    #
+    #     labels_ = np.array(y, dtype=np.float)
+    #     number_of_batches = len(X) // batch_size
+    #     sample_index = np.arange(len(X))
+    #
+    #     # compute discrete firing times
+    #     tau_eff = 20e-3 / time_step
+    #     firing_times = np.array(current2firing_time(X, tau=tau_eff, tmax=nb_steps), dtype=np.float)
+    #     unit_numbers = np.arange(nb_units[1] * nb_units[2])
+    #     # unit_numbers_2 = np.arange(nb_units[2])
+    #
+    #     if shuffle:
+    #         np.random.shuffle(sample_index)
+    #
+    #     # total_batch_count = 0
+    #     counter = 0
+    #     while counter < number_of_batches:
+    #         batch_index = sample_index[batch_size * counter:batch_size * (counter + 1)]
+    #
+    #         coo = [[] for i in range(5)]
+    #         for bc, idx in enumerate(batch_index):
+    #             for n_mat in range(0, nb_units[0]):
+    #                 c = firing_times[idx] < nb_steps
+    #                 times, units = firing_times[idx][c], unit_numbers[c]
+    #
+    #                 cols = np.fix((units + 1) / nb_units[1] - 1).astype(int)  # cols
+    #                 rows = (np.mod((units), nb_units[1])).astype(int)  # rows
+    #
+    #                 batch = [bc for _ in range(len(times))]
+    #                 matrices = [n_mat for _ in range(len(times))]
+    #                 coo[0].extend(batch)
+    #                 coo[1].extend(times)
+    #                 coo[2].extend(matrices)
+    #                 coo[3].extend(rows)
+    #                 coo[4].extend(cols)
+    #
+    #         i = torch.LongTensor(coo).to(device)
+    #         v = torch.FloatTensor(np.ones(len(coo[0]))).to(device)
+    #
+    #         X_batch = torch.sparse.FloatTensor(i, v, torch.Size(
+    #             [batch_size, nb_steps, nb_units[0], nb_units[1], nb_units[2]])).to(device)
+    #         # y_batch = torch.tensor(labels_[batch_index],device=device)
+    #         LL = []
+    #         for lab in labels_[batch_index]:
+    #             LL.append([[lab]])
+    #         y_batch = torch.tensor(np.repeat(np.array(LL), 300, axis=1), device=device)
+    #
+    #         yield X_batch.detach().cpu().to_dense().numpy(), y_batch.detach().cpu().numpy()
+    #
+    #         counter += 1
+def equalizeClasses(keys,labels):
+    m = np.inf
+    for nc in range(0, max(labels)+1):
+        m = np.min([np.sum(labels == nc), m])
+    m = int(m)
+    kk = np.zeros([0,  keys .shape[1]])
+    ll = []
+    for nc in range(0, max(labels)+1):
+        kk = np.row_stack([kk,  keys[labels == nc][0:m]])
+        ll.extend([nc for iii in range(0, m)])
+    ll = np.array(ll)
+    kk = kk.astype(int)
+    return kk, ll
 
 def create_datasets(
         root='data/motoneurons/MNDS_KaJu.mat',
