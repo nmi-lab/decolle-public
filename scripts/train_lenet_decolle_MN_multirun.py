@@ -26,7 +26,7 @@ def main():
     # args = parse_args('samples/params_to_test/0_a.yml')
     device = args.device
 
-    CV = 5
+    CV = 1
 
     for cv in range(0, CV):
         starting_epoch = 0
