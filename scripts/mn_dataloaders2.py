@@ -130,7 +130,7 @@ class MNDataset(NeuromorphicDataset):
 
         self.fsamp = int(matfile['e']['fsamp'])
 
-        print('Number of considered muscles : ' + str(self.data.shape[0]))
+        print('Number of considered muscles : ' + str(self.data.shape[0]-len(self.muscle2Excl)))
         print('Number of motor neurons per muscle :')
         self.nMN = 0
         for iii in range(0, self.data.shape[0]):
@@ -138,9 +138,9 @@ class MNDataset(NeuromorphicDataset):
             if (np.argwhere(np.array(self.muscle2Excl)==iii+1)).shape[0] == 0:
                 if self.data[iii, 0].shape[1] > 0:
                     self.nMN += self.data[iii, 0].shape[0]
-                    print(self.muscles[iii] + ', ' + str(self.data[iii, 0].shape[0]) + ' MNs')
+                    print(matfile['e']['muscles'][0, 0][iii, 0][0] + ', ' + str(self.data[iii, 0].shape[0]) + ' MNs')
                 else:
-                    print(self.muscles[iii] + ', ' + str(self.data[iii, 0].shape[1]) + ' MNs')
+                    print(matfile['e']['muscles'][0, 0][iii, 0][0] + ', ' + str(self.data[iii, 0].shape[1]) + ' MNs')
 
         ## 2. Extract here labels and keys
 
@@ -156,7 +156,8 @@ class MNDataset(NeuromorphicDataset):
 
         m = []
         for nc in range(0, max(labels)+1):
-            m.append(np.sum(labels == nc))
+            # m.append(np.sum(labels == nc))
+            m.append(np.sum(np.diff(keys[labels == nc, :], axis=1)))
         if min(m) < max(m):
             self.equalize = True
 
@@ -400,8 +401,12 @@ def equalizeClasses(keys,labels):
     for nc in range(0, max(labels)+1):
         kk = np.row_stack([kk,  keys[labels == nc][0:m]])
         ll.extend([nc for iii in range(0, m)])
+    slices_to_take = np.arange(0, len(ll))
+    random.shuffle(slices_to_take)
     ll = np.array(ll)
     kk = kk.astype(int)
+    ll = ll[slices_to_take]
+    kk = kk[slices_to_take]
     return kk, ll
 
 def create_datasets(
