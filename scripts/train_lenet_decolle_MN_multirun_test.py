@@ -19,7 +19,7 @@ import importlib
 
 def main():
     # fold = 'C:/Users/stanzarella/data/planned_params/FirstDefinitiveRun/'
-    file = 'params_MN_10cl_incr_cs250_ov0.5.yml'
+    file = 'params_MN_5cl_allcycles_cs150_ov0.5.yml'
     np.set_printoptions(precision=4)
     # args = parse_args('parameters/params.yml')
     # args = parse_args('parameters/params_MN.yml')
