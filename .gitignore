@@ -4,6 +4,11 @@ scripts/logs
 scripts/runs_arg*
 scripts/data
 nohup.out
+scripts/motoneurons
+*params_to_test*
+*logs*
+*.tar
+*OneDrive*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
