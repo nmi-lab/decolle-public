@@ -36,11 +36,13 @@ class LenetDECOLLE1DMN(DECOLLEBaseMN):
         # TODO Change input shape in .yml
         # Check Nhid and Mhid
         PS = np.array(pool_size)
-        pool_size = list(PS[Nhid > 0])
+
         Nhid = list(Nhid[Nhid>0])
+        num_conv_layers = len(Nhid)
+        pool_size = list(PS[0:num_conv_layers])
 
         Mhid = list(Mhid[Mhid > 0])
-        num_conv_layers = len(Nhid)
+
         num_mlp_layers = len(Mhid)
         alpha=list(alpha)
         alpharp = list(alpharp)
