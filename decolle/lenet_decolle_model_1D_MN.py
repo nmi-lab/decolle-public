@@ -37,6 +37,7 @@ class LenetDECOLLE1DMN(DECOLLEBaseMN):
         # Check Nhid and Mhid
         PS = np.array(pool_size)
 
+
         Nhid = list(Nhid[Nhid>0])
         num_conv_layers = len(Nhid)
         pool_size = list(PS[0:num_conv_layers])
