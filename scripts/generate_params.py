@@ -13,6 +13,8 @@ def parse_args():
                              'Single element list must have a comma at the end (i.e -v 1,2,3 4, 5,6')
     parser.add_argument('--default_params_file', type=str, default='params.yml',
                         help='File containing all of the default parameters and the specific parameter to test')
+    parser.add_argument('--append', default=False,action='store_true',
+                        help='Set this flag to append parameters file to those already present in params_to_test dir')
 
     args = parser.parse_args()
 
@@ -25,11 +27,22 @@ def main():
     param_list = [args.default_params_file]
 
     out_dir = 'params_to_test'
-    if os.path.exists(out_dir):
-        shutil.rmtree(out_dir)
-    os.makedirs(out_dir)
+    if os.path.exists(out_dir) and not args.append:
+        if input(f'Directory {out_dir} already exists. Are you sure you want to replace all of its content? (y/n)\n') == 'y':
+            shutil.rmtree(out_dir)
+        else:
+            print('Exiting')
+            exit(0)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
-    i = 0
+    if args.append and os.listdir(out_dir):
+        i = int(os.path.splitext(sorted(os.listdir(out_dir))[-1])[0])
+    else:
+        i = 0
+
+    first_file = i
+    
     for param_name, value_list in zip(args.param_name, args.values_list):
         param_name = param_name[0]
         t = None
@@ -62,7 +75,7 @@ def main():
                             params_out[param_name] = float(p_split[0])
                         except ValueError:
                             params_out[param_name] = p_split[0]
-                if params_out == params:
+                if params_out == params and param_file != args.default_params_file:
                     continue
 
                 i += 1
@@ -84,8 +97,8 @@ def main():
                 t = type(params_out[param_name])
 
                 if warn:
-                    print('WARNING! Check type consistency')
-        param_list = [os.path.join(out_dir, x) for x in os.listdir(out_dir)]
+                    print(f'WARNING! Check type consistency for {param_name}')
+        param_list = [os.path.join(out_dir, x) for x in sorted(os.listdir(out_dir))[first_file:]]
 
 
 if __name__ == '__main__':
