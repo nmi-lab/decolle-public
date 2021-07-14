@@ -43,8 +43,8 @@ gen_train, gen_test = create_data(chunk_size_train=params['chunk_size_train'],
                                   num_workers=params['num_dl_workers'])
 
 data_batch, target_batch = next(iter(gen_train))
-data_batch = torch.Tensor(data_batch).to(device)
-target_batch = torch.Tensor(target_batch).to(device)
+data_batch = torch.tensor(data_batch).to(device)
+target_batch = torch.tensor(target_batch).to(device)
 
 #d, t = next(iter(gen_train))
 input_shape = data_batch.shape[-3:]

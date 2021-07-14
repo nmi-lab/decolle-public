@@ -10,11 +10,13 @@
 # Licence : GPLv2
 #-----------------------------------------------------------------------------
 from decolle.lenet_decolle_model import LenetDECOLLE, DECOLLELoss, LIFLayerVariableTau, LIFLayer
+from decolle.lenet_redecolle import RecLIFLayer, LenetREDECOLLE
 from decolle.utils import parse_args, train, test, accuracy, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats, cross_entropy_one_hot
 import datetime, os, socket, tqdm
 import numpy as np
 import torch
 import importlib
+from pylab import plt
 
 np.set_printoptions(precision=4)
 args = parse_args('parameters/params.yml')
@@ -43,8 +45,8 @@ gen_train, gen_test = create_data(chunk_size_train=params['chunk_size_train'],
                                   num_workers=params['num_dl_workers'])
 
 data_batch, target_batch = next(iter(gen_train))
-data_batch = torch.Tensor(data_batch).to(device)
-target_batch = torch.Tensor(target_batch).to(device)
+data_batch = data_batch.to(torch.float32).to(device)
+target_batch = target_batch.to(torch.float32).to(device)
 
 #d, t = next(iter(gen_train))
 input_shape = data_batch.shape[-3:]
@@ -54,7 +56,7 @@ if 'dropout' not in params.keys():
     params['dropout'] = [.5]
 
 ## Create Model, Optimizer and Loss
-net = LenetDECOLLE( out_channels=params['out_channels'],
+net = LenetREDECOLLE( out_channels=params['out_channels'],
                     Nhid=params['Nhid'],
                     Mhid=params['Mhid'],
                     kernel_size=params['kernel_size'],
@@ -67,27 +69,18 @@ net = LenetDECOLLE( out_channels=params['out_channels'],
                     num_conv_layers=params['num_conv_layers'],
                     num_mlp_layers=params['num_mlp_layers'],
                     lc_ampl=params['lc_ampl'],
-                    lif_layer_type = LIFLayer,
+                    lif_layer_type = [LIFLayer]*len(params['Nhid'])+[RecLIFLayer]*len(params['Mhid']),
                     method=params['learning_method'],
                     with_output_layer=params['with_output_layer']).to(device)
 
-if hasattr(params['learning_rate'], '__len__'):
-    from decolle.utils import MultiOpt
-    opts = []
-    for i in range(len(params['learning_rate'])):
-        opts.append(torch.optim.Adamax(net.get_trainable_parameters(i), lr=params['learning_rate'][i], betas=params['betas']))
-    opt = MultiOpt(*opts)
-else:
-    opt = torch.optim.Adamax(net.get_trainable_parameters(), lr=params['learning_rate'], betas=params['betas'])
+
+opt = torch.optim.Adamax(net.get_trainable_parameters(), lr=params['learning_rate'], betas=params['betas'])
 
 reg_l = params['reg_l'] if 'reg_l' in params else None
 
-if 'loss_scope' in params and params['loss_scope']=='global':
+if params['loss_scope']=='global':
     loss = [None for i in range(len(net))]
-    if net.with_output_layer: 
-        loss[-1] = cross_entropy_one_hot
-    else:
-        raise RuntimeError('bptt mode needs output layer')
+    loss[-1] = cross_entropy_one_hot
     decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=reg_l)
 else:
     loss = [torch.nn.SmoothL1Loss() for i in range(len(net))]
@@ -96,10 +89,8 @@ else:
     decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=reg_l)
 
 ##Initialize
-net.init_parameters(data_batch[:32])
+net.init_parameters(data_batch)
 
-from decolle.init_functions import init_LSUV
-init_LSUV(net, data_batch[:32])
 ##Resume if necessary
 if args.resume_from is not None:
     print("Checkpoint directory " + checkpoint_dir)
@@ -116,6 +107,52 @@ if args.verbose:
         print('{}{} : {}'.format(k, ' ' * (m - len(k)), v))
 
 print('\n------Starting training with {} DECOLLE layers-------'.format(len(net)))
+
+def process_decolle_output(net, data_batch):
+    from decolle.utils import tonp
+    net.init(data_batch, burnin=1)
+    t = (data_batch.shape[1],)
+    s,r,u = net(data_batch[:,0])
+    s_out = [np.zeros(t+tonp(layer).shape     ) for layer in s]
+    r_out = [np.zeros(t+tonp(layer).shape     ) for layer in r ]
+    u_out = [np.zeros(t+tonp(layer).shape     ) for layer in u]
+
+
+    for t in range(data_batch.shape[1]):
+        net.state=None
+        s,r,u = net(data_batch[:,t])
+        for i in range(len(net.LIF_layers)):
+            s_out[i][t,:] = tonp(s[i])
+            u_out[i][t,:] = tonp(u[i])
+            r_out[i][t,:] = tonp(r[i])
+
+    return s_out, r_out, u_out
+
+def show_uhistograms(net, data_batch):
+    s_out, r_out, u_out =  process_decolle_output(net, data_batch)
+    rng = np.arange(-10,10,1)
+    plt.figure()
+    plt.imshow(np.array([np.histogram(u_out[0][t:t+10,:,0].reshape(-1), bins=rng)[0] for t in range(10,300,10)]), extent=[-100,100,0,300])
+    plt.figure()
+    plt.imshow(np.array([np.histogram(u_out[1][t:t+10,:,0].reshape(-1), bins=rng)[0] for t in range(10,300,10)]), extent=[-100,100,0,300])
+    plt.figure()
+    plt.imshow(np.array([np.histogram(u_out[2][t:t+10,:,0].reshape(-1), bins=rng)[0] for t in range(10,300,10)]), extent=[-100,100,0,300])
+
+    plt.show()
+
+def show_rhistograms(net, data_batch):
+    s_out, r_out, u_out =  process_decolle_output(net, data_batch)
+    rng = np.arange(-1,1,.1)
+    plt.figure()
+    plt.imshow(np.array([np.histogram(r_out[0][t:t+10,:].reshape(-1), bins=rng)[0] for t in range(10,300,10)]), extent=[min(rng),max(rng),0,1])
+    plt.figure()
+    plt.imshow(np.array([np.histogram(r_out[1][t:t+10,:].reshape(-1), bins=rng)[0] for t in range(10,300,10)]), extent=[min(rng),max(rng),0,1])
+    plt.figure()
+    plt.imshow(np.array([np.histogram(r_out[2][t:t+10,:].reshape(-1), bins=rng)[0] for t in range(10,300,10)]), extent=[min(rng),max(rng),0,1])
+
+    plt.show()
+
+
 
 # --------TRAINING LOOP----------
 if not args.no_train:
@@ -147,3 +184,6 @@ if not args.no_train:
         if not args.no_save:
             for i in range(len(net)):
                 writer.add_scalar('/act_rate/{0}'.format(i), act_rate[i], e)
+
+
+
