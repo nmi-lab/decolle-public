@@ -9,6 +9,7 @@ scripts/motoneurons
 *logs*
 *.tar
 *OneDrive*
+*.mat
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
