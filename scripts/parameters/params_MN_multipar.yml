@@ -1,0 +1,93 @@
+Nhid:
+- 16
+- 0
+- 0
+Nhid_step:
+- -16
+- 0
+- 16
+- 32
+Mhid:
+- 32
+- 0
+Mhid_step:
+- 0
+- 8
+- 16
+- 32
+alpha:
+- 0.65
+alpharp:
+- 0.5
+alpha_step:
+- 0
+- 0.15
+- 0.3
+batch_size: 60
+beta:
+- 0.6
+beta_step:
+- 0
+- 0.15
+- 0.3
+betas:
+- 0.0
+- 0.95
+burnin_steps: 60
+chunk_size_test:
+- 200
+- 400
+- 600
+overlap_size_test_perc:
+- 0
+- 0.5
+chunk_size_train:
+- 200
+- 400
+- 600
+overlap_size_train_perc:
+- 0
+- 0.5
+dataset: torchneuromorphic.motoneurons.mn_dataloaders
+deltat: 1000
+input_shape:
+- 0
+kernel_size:
+- 3
+lc_ampl: 0.5
+learning_rate: 1.e-6
+loss: smoothL1
+lr_drop_factor: 5
+lr_drop_interval: 30
+num_layers: 3
+num_epochs: 100
+num_conv_layers: 3
+num_mlp_layers: 0
+num_dl_workers: 4
+optimizer: adamax
+out_channels: 9
+pool_size:
+- 2
+- 1
+- 2
+random_tau: true
+reg_l:
+- .0
+- .0
+- .0
+- .0
+test_interval: 1
+init_theta:
+- 5.e-5
+- 5.e-5
+- 5.e-5
+- 5.e-5
+muscle_to_exclude:
+- 9
+- 10
+- 11
+- 12
+- 13
+- 14
+online_update: True
+learning_method: 'rtrl'

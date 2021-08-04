@@ -4,32 +4,31 @@ Nhid:
 - 128
 Mhid: []
 alpha:
-- 0.97
+- 0.75
 alpharp:
 - 0.65
-batch_size: 72
+batch_size: 60
 beta:
-- 0.92
+- 0.97
 betas:
 - 0.0
 - 0.95
 burnin_steps: 60
-chunk_size_test: 300
-overlap_size_test_perc: 0.5
-chunk_size_train: 300
-overlap_size_train_perc: 0.5
-dataset: torchneuromorphic.nmnist.nmnist_dataloaders
+chunk_size_test: 200
+overlap_size_test_perc: 0.9
+chunk_size_train: 200
+overlap_size_train_perc: 0.9
+dataset: mn_dataloaders2
+perc_test_norm: 0.1
+filename: data/motoneurons/MNDS_KaJu_10ClassesIMRLTTaToGrips_AllPost_IPD.mat
 deltat: 1000
-input_shape:
-- 2
-- 32
-- 32
+input_shape: []
 kernel_size:
-- 7
+- 3
 lc_ampl: 0.5
-learning_rate: 1.e-9
+learning_rate: 1.e-6
 loss: smoothL1
-lr_drop_factor: 5
+lr_drop_factor: 2
 lr_drop_interval: 30
 num_layers: 3
 num_epochs: 100
@@ -42,7 +41,7 @@ pool_size:
 - 2
 - 1
 - 2
-random_tau: true
+random_tau: False
 reg_l:
 - .0
 - .0
@@ -55,5 +54,17 @@ init_theta:
 - 5.e-5
 - 5.e-5
 muscle_to_exclude: []
+class_to_include:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+thr_firing_excl_slice: 0
 online_update: True
 learning_method: 'rtrl'

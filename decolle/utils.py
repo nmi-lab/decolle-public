@@ -81,6 +81,7 @@ def print_params(params):
 
 def parse_args(default_params_file = 'parameters/params.yml'):
     parser = argparse.ArgumentParser(description='DECOLLE for event-driven object recognition')
+    # parser.add_argument('--device', type=str, default='cuda', help='Device to use (cpu or cuda)')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use (cpu or cuda)')
     parser.add_argument('--resume_from', type=str, default=None, metavar='path_to_logdir',
                         help='Path to a previously saved checkpoint')
@@ -114,7 +115,7 @@ def prepare_experiment(name, args):
         params_file = args.params_file
         if not args.no_save:
             current_time = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
-            log_dir = os.path.join('logs/{0}/'.format(name),
+            log_dir = os.path.join('{0}/'.format(name),
                                    args.save_dir,
                                    current_time + '_' + socket.gethostname())
             checkpoint_dir = os.path.join(log_dir, 'checkpoints')
@@ -275,8 +276,8 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True, 
     batch_iter = 0
     
     for data_batch, target_batch in tqdm.tqdm(iter_gen_train, desc='Epoch {}'.format(epoch)):
-        data_batch = torch.Tensor(data_batch).type(dtype).to(device)
-        target_batch = torch.Tensor(target_batch).type(dtype).to(device)
+        data_batch = torch.Tensor(data_batch).type(dtype).to(device) #(data_batch.device)
+        target_batch = torch.Tensor(target_batch).type(dtype).to(device) #to(target_batch.device)
         if len(target_batch.shape) == 2:
             #print('replicate targets for all timesteps')
             target_batch = target_batch.unsqueeze(1)
@@ -289,7 +290,7 @@ def train(gen_train, decolle_loss, net, opt, epoch, burnin, online_update=True, 
         net.init(data_batch, burnin)
         t_sample = data_batch.shape[1]
         for k in (range(burnin,t_sample)):
-            s, r, u = net.forward(data_batch[:, k, :, :])
+            s, r, u = net.forward(data_batch[:, k])     # , :, :])
             loss_ = decolle_loss(s, r, u, target=target_batch[:,k,:], mask = loss_mask[:,k,:], sum_ = False)
             total_loss += tonp(torch.Tensor(loss_))
             loss_tv += sum(loss_)
@@ -347,11 +348,12 @@ def test(gen_test, decolle_loss, net, burnin, print_error = True, debug = False)
             net.init(data_batch, burnin)
 
             for k in (range(burnin,timesteps)):
-                s, r, u = net.forward(data_batch[:, k, :, :])
+                s, r, u = net.forward(data_batch[:, k])     # , :, :])
                 test_loss_tv = decolle_loss(s,r,u, target=target_batch[:,k], sum_ = False)
                 test_loss += [tonp(x) for x in test_loss_tv]
                 for n in range(len(net)):
-                    r_cum[n,k-burnin,:,:] += tonp(sigmoid(r[n]))
+                    # r_cum[n,k-burnin,:,:] += tonp(sigmoid(r[n])) S Tanzarella
+                    r_cum[n, k - burnin] += tonp(sigmoid(r[n]))
             test_res.append(prediction_mostcommon(r_cum))
             test_labels += tonp(target_batch).sum(1).argmax(axis=-1).tolist()
         test_acc  = accuracy(np.column_stack(test_res), np.column_stack(test_labels))
@@ -397,22 +399,50 @@ def write_stats(epoch, test_acc, test_loss, writer):
         writer.add_scalar('/test_loss/layer{}'.format(i), l, epoch)
         writer.add_scalar('/test_acc/layer{}'.format(i), a, epoch)
         
-def get_output_shape(input_shape, kernel_size=[3,3], stride = [1,1], padding=[1,1], dilation=[0,0]):
-    if not hasattr(kernel_size, '__len__'):
-        kernel_size = [kernel_size, kernel_size]
-    if not hasattr(stride, '__len__'):
-        stride = [stride, stride]
-    if not hasattr(padding, '__len__'):
-        padding = [padding, padding]
-    if not hasattr(dilation, '__len__'):
-        dilation = [dilation, dilation]
-    im_height = input_shape[-2]
-    im_width = input_shape[-1]
-    height = int((im_height + 2 * padding[0] - dilation[0] *
-                  (kernel_size[0] - 1) - 1) // stride[0] + 1)
-    width = int((im_width + 2 * padding[1] - dilation[1] *
-                  (kernel_size[1] - 1) - 1) // stride[1] + 1)
-    return [height, width]
+def get_output_shape(input_shape, kernel_size=[3,3], stride = [1,1], padding=[1,1], dilation=[0,0], convModel=2):
+
+    if (len(input_shape) == 1) | ((len(input_shape) == 2) & (hasattr(kernel_size, '__len__'))) | (convModel==1):
+        im_length = input_shape[-1]
+        if not hasattr(kernel_size, '__len__'):
+            length = int((im_length + 2 * padding - dilation *
+                          (kernel_size - 1) - 1) // stride + 1)
+        else:
+            length = int((im_length + 2 * padding[0] - dilation[0] *
+                          (kernel_size[0] - 1) - 1) // stride[0] + 1)
+
+        return [length]
+    else:
+        if not hasattr(kernel_size, '__len__'):
+            kernel_size = [kernel_size, kernel_size]
+        if not hasattr(stride, '__len__'):
+            stride = [stride, stride]
+        if not hasattr(padding, '__len__'):
+            padding = [padding, padding]
+        if not hasattr(dilation, '__len__'):
+            dilation = [dilation, dilation]
+        im_height = input_shape[-2]
+        im_width = input_shape[-1]
+        height = int((im_height + 2 * padding[0] - dilation[0] *
+                      (kernel_size[0] - 1) - 1) // stride[0] + 1)
+        width = int((im_width + 2 * padding[1] - dilation[1] *
+                      (kernel_size[1] - 1) - 1) // stride[1] + 1)
+        return [height, width]
+
+def get_output_shape_1D(input_shape, kernel_size=[3], stride = [1], padding=[1], dilation=[0]):
+    # if not hasattr(kernel_size, '__len__'):
+    #     kernel_size = [kernel_size, kernel_size]
+    # if not hasattr(stride, '__len__'):
+    #     stride = [stride, stride]
+    # if not hasattr(padding, '__len__'):
+    #     padding = [padding, padding]
+    # if not hasattr(dilation, '__len__'):
+    #     dilation = [dilation, dilation]
+
+    im_length = input_shape
+    length = int((im_length + 2 * padding - dilation *
+                  (kernel_size - 1) - 1) // stride + 1)
+
+    return length
 
 class DictMultiOpt(object):
     def __init__(self, params):
@@ -450,3 +480,15 @@ class MultiOpt(object):
     @property
     def param_groups(self):
         return [self.multioptparam]
+
+def quantifyBatch(data_batch,target_batch):
+    for jjj in range(0, data_batch.size()[0]):  # Batches
+        for iii in range(0, data_batch.size()[2]):  # Neurons
+            # for iii in range(0, data_batch.size()[3]):
+            S[iii, jjj] = int(data_batch[jjj, :, iii].sum())
+            # S[iii, jjj] = int(data_batch[jjj, :, :, iii].sum().sum().sum())
+            if S[iii, jjj] > 0:
+                D[iii, jjj] = int(np.diff(np.where(data_batch[jjj, :, iii] == 1)).sum() / S[iii, jjj])
+                # D[iii, jjj] = int(np.diff(np.where(data_batch[jjj, :, :, iii] == 1),axis=0).sum().sum().sum() / S[iii, jjj])
+
+            T[iii, jjj] = int(np.array(np.where(target_batch[jjj, iii, :] == 1)))

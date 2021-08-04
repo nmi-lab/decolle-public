@@ -238,6 +238,8 @@ class LIFLayer(nn.Module):
 
         state = self.state
         Sin_t = Sin_t.to(self.state.Q.device)
+        self.alpha = self.alpha.to(self.state.Q.device)
+        self.beta = self.beta.to(self.state.Q.device)
         Q = self.beta * state.Q + self.tau_s * Sin_t
         P = self.alpha * state.P + self.tau_m * state.Q  
         R = self.alpharp * state.R - state.S * self.wrp
@@ -246,6 +248,7 @@ class LIFLayer(nn.Module):
             U = self.base_layer(P) + R
         elif len(self.base_layer.weight.shape) == len(P.shape) + 1:
             U = self.base_layer(P.unsqueeze(len(P.shape))) + R
+            # U = self.base_layer(P.unsqueeze(0)) + R
         S = self.sg_function(U)
         self.state = self.NeuronState(P=P, Q=Q, R=R, S=S)
         if self.do_detach: 
@@ -355,11 +358,11 @@ class LIFLayerVariableTau(LIFLayer):
         self.tau_s = torch.nn.Parameter(1. / (1 - self.beta), requires_grad = False)
         self.reset_parameters(self.base_layer)
 
-class DECOLLEBase(nn.Module):
+class DECOLLEBaseMN(nn.Module):
     requires_init = True
     def __init__(self):
 
-        super(DECOLLEBase, self).__init__()
+        super(DECOLLEBaseMN, self).__init__()
 
         self.LIF_layers = nn.ModuleList()
         self.readout_layers = nn.ModuleList()

@@ -7,27 +7,24 @@ alpha:
 - 0.97
 alpharp:
 - 0.65
-batch_size: 72
+batch_size: 60
 beta:
 - 0.92
 betas:
 - 0.0
 - 0.95
-burnin_steps: 60
-chunk_size_test: 300
-overlap_size_test_perc: 0.5
-chunk_size_train: 300
-overlap_size_train_perc: 0.5
+burnin_steps: 1
+chunk_size_test: 20
+overlap_size_test_perc: 0
+chunk_size_train: 20
+overlap_size_train_perc: 0
 dataset: torchneuromorphic.nmnist.nmnist_dataloaders
 deltat: 1000
-input_shape:
-- 2
-- 32
-- 32
+input_shape: []
 kernel_size:
-- 7
+- 3
 lc_ampl: 0.5
-learning_rate: 1.e-9
+learning_rate: 1.e-6
 loss: smoothL1
 lr_drop_factor: 5
 lr_drop_interval: 30
@@ -37,7 +34,7 @@ num_conv_layers: 3
 num_mlp_layers: 0
 num_dl_workers: 4
 optimizer: adamax
-out_channels: 10
+out_channels: 9
 pool_size:
 - 2
 - 1
