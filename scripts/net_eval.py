@@ -6,8 +6,7 @@ import numpy as np
 import torch
 import importlib
 import yaml
-
-
+from tqdm import tqdm
 def main():
  
     device = 'cuda'
@@ -96,12 +95,28 @@ def main():
 
     checkpoint_dir = os.path.join(path, 'checkpoints')
 
-    load_model_from_checkpoint(checkpoint_dir, net, opt, n_checkpoint=-1, device='cuda')
+    load_model_from_checkpoint(checkpoint_dir, net, opt, n_checkpoint=-1, device=device)
     
     net.eval()
 
-    for i in range(100):
-        test_loss, test_acc = test(gen_test, decolle_loss, net, params['burnin_steps'], print_error = True)
+    with torch.no_grad():
+        if hasattr(net.LIF_layers[0], 'base_layer'):
+            dtype = net.LIF_layers[0].base_layer.weight.dtype
+        else:
+            dtype = net.LIF_layers[0].weight.dtype
+        device = net.get_input_layer_device()
+        iter_data_labels = iter(gen_test)
+
+        for data_batch, target_batch in iter_data_labels:
+            data_batch = torch.Tensor(data_batch).type(dtype).to(device)
+
+            timesteps = data_batch.shape[1]
+
+            net.init(data_batch, 0)
+
+            for k in tqdm(range(timesteps)):
+                s, r, u = net.forward(data_batch[:, k])     # , :, :])
+
 
 
 if __name__ == "__main__":
