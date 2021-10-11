@@ -90,6 +90,7 @@ class MNDataset(NeuromorphicDataset):
             perc_test_norm=0.1,
             muscle_to_exclude=[],
             class_to_include=[],
+            min_nMN=[],
             thr_firing_excl_slice=[],
             slices_to_take=[],
             dt=1000):
@@ -119,70 +120,117 @@ class MNDataset(NeuromorphicDataset):
         self.thr_firing_excl_slice = thr_firing_excl_slice
         self.equalize = False
 
-        ## 1. LOAD THE FILE
-        matfile = scipy.io.loadmat(root)
-        self.data = matfile['e']['mu'][0, 0][0, 0][1]
-        self.muscles = []
-        for iii in range(0, matfile['e']['muscles'][0, 0].shape[0]):
-            # TODO: : Insert here the condition for muscles to exclude (DONE)
-            if (np.argwhere(np.array(self.muscle2Excl) == iii + 1)).shape[0] == 0:
-                self.muscles.append(matfile['e']['muscles'][0, 0][iii, 0][0])
+        l = []
+        k = np.zeros([0, 2])
+        rc = []
 
-        self.fsamp = int(matfile['e']['fsamp'])
+        maxTimeValPrevious = 0
+        for rt in range(0,len(root)):
+            ## 1. LOAD THE FILE
+            print(root[rt])
+            matfile = scipy.io.loadmat(root[rt])
+            # self.data = matfile['e']['mu'][0, 0][0, 0][1]
+            data = matfile['e']['mu'][0, 0][0, 0][1]
 
-        print('Number of considered muscles : ' + str(self.data.shape[0]-len(self.muscle2Excl)))
-        print('Number of motor neurons per muscle :')
-        self.nMN = 0
-        for iii in range(0, self.data.shape[0]):
-            # TODO: : Insert here the condition for muscles to exclude (DONE)
-            if (np.argwhere(np.array(self.muscle2Excl)==iii+1)).shape[0] == 0:
-                if self.data[iii, 0].shape[1] > 0:
-                    self.nMN += self.data[iii, 0].shape[0]
-                print(matfile['e']['muscles'][0, 0][iii, 0][0] + ', ' + str(self.data[iii, 0].shape[0]) + ' MNs')
+            self.fsamp = int(matfile['e']['fsamp'])
+
+            self.min_nMN = min_nMN
+
+            print('Number of considered muscles : ' + str(data.shape[0]-len(self.muscle2Excl)))
+            print('Number of motor neurons per muscle :')
+            self.nMN = 0
+            self.nMNs = []
+            self.muscles = []
+            maxTimeVal = 0
+            # Run through muscles
+            for iii in range(0, data.shape[0]):
+                # TODO: : Insert here the condition for muscles to exclude (DONE)
+                if (np.argwhere(np.array(self.muscle2Excl) == iii + 1)).shape[0] == 0:
+                    self.muscles.append(matfile['e']['muscles'][0, 0][iii, 0][0])
+
+                mn = []
+                if data[iii, 0].shape[1] > 0:
+                    # Take number of MNs
+                    self.nMN += data[iii, 0].shape[0]
+                    # Take number of firings for each MN
+                    for jjj in range(0, data[iii, 0].shape[0]):
+                        mn.append(np.shape(data[iii, 0][jjj, 0])[1])
+                        maxTimeVal = max([maxTimeVal, np.max( data[iii, 0][jjj, 0] )])
+                # Append number of MN firings for this muscle
+                self.nMNs.append(mn)
+
+                # Order MNs by number of firings in this muscle
+                data[iii, 0] = data[iii, 0][np.argsort(mn)]
+                if (np.argwhere(np.array(self.muscle2Excl) == iii + 1)).shape[0] == 0:
+                    print(matfile['e']['muscles'][0, 0][iii, 0][0] + ', ' + str(data[iii, 0].shape[0]) + ' MNs')
+
+                if len(self.min_nMN) == data.shape[0]:
+                    if self.min_nMN[iii] > 0:
+                        data[iii, 0] = data[iii, 0][-(self.min_nMN[iii]+1):-1]
+                    else:
+                        data[iii, 0] = np.array([])
+                    if (np.argwhere(np.array(self.muscle2Excl) == iii + 1)).shape[0] == 0:
+                        print('And we took ' + str(self.min_nMN[iii]) + ' MNs')
+
+            if rt == 0:
+                self.data = data
+            else:
+                for iii in range(0, data.shape[0]):
+                    for jjj in range(0, data[iii, 0].shape[0]):
+                        try:
+                            self.data[iii, 0][jjj,0] = np.column_stack([self.data[iii, 0][jjj,0], data[iii, 0][jjj,0] + maxTimeValPrevious])
+                        except:
+                            print(str(rt) + ' ' + str(iii) + ' ' + str(jjj))
+
+            ## 2. Extract here labels and keys
+
+            # TODO : dynamic assignation test and train portions (DONE)
+            # self.labelsTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 2]-1
+            # self.labelsTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 2]-1
+            # self.keysTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 0:2]
+            # self.keysTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 0:2]
+            KEYS = matfile['e']['Keys'][0, 0]
+
+            labels = KEYS[:, 2] - 1*(min(KEYS[:, 2]) == 1)
+            keys = KEYS[:, 0:2]
+
+            m = []
+            for nc in range(0, max(labels)+1):
+                # m.append(np.sum(labels == nc))
+                m.append(np.sum(np.diff(keys[labels == nc, :], axis=1)))
+            if min(m) < max(m):
+                self.equalize = True
+
+            # ## Exclude classes at this level
+            # if self.class_to_include is list:
+            #     for ccc in range(0,len(self.class_to_include)):
+            #         KEYS[KEYS[:, 2]==self.class_to_include[ccc]]=[]
+            # Take only the classes you need
+
+            self.nclasses = max(labels) + 1*(min(labels) == 0)
+            #Create new labels which go continuously from 0 to newNClasses
+            keys = np.array(keys)
+            # CLASS SELECTION HERE
+            if type(self.class_to_include) is list:
+                if not(len(self.class_to_include) == 0):
+                    self.nclasses = 0
+                    # l = []
+                    # k = np.zeros([0,keys.shape[1]])
+                    for nc in self.class_to_include:
+                        # l.extend(labels[labels == nc])
+                        l.extend([int(self.nclasses) for iii in range(0, np.sum([labels == nc]))])
+                        k = np.row_stack([k, keys[labels == nc,: ] + maxTimeValPrevious])
+                        rc.extend([int(rt) for iii in range(0, np.sum([labels == nc]))])
+                        self.nclasses+=1
+
+            # You start from this value for the next recording
+            maxTimeValPrevious = maxTimeVal
+
+        labels = np.array(l)
+        keys = k.astype(int)
+        recording = np.array(rc)
 
 
-
-        ## 2. Extract here labels and keys
-
-        # TODO : dynamic assignation test and train portions (DONE)
-        # self.labelsTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 2]-1
-        # self.labelsTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 2]-1
-        # self.keysTrain = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] == 0, 0:2]
-        # self.keysTest = matfile['e']['Keys'][0, 0][matfile['e']['Keys'][0, 0][:, 3] > 0, 0:2]
-        KEYS = matfile['e']['Keys'][0, 0]
-
-        labels = KEYS[:, 2] - 1*(min(KEYS[:, 2]) == 1)
-        keys = KEYS[:, 0:2]
-
-        m = []
-        for nc in range(0, max(labels)+1):
-            # m.append(np.sum(labels == nc))
-            m.append(np.sum(np.diff(keys[labels == nc, :], axis=1)))
-        if min(m) < max(m):
-            self.equalize = True
-
-        # ## Exclude classes at this level
-        # if self.class_to_include is list:
-        #     for ccc in range(0,len(self.class_to_include)):
-        #         KEYS[KEYS[:, 2]==self.class_to_include[ccc]]=[]
-        # Take only the classes you need
-
-        self.nclasses = max(labels) + 1*(min(labels) == 0)
-        #Create new labels which go continuously from 0 to newNClasses
-        keys = np.array(keys)
-        # CLASS SELECTION HERE
-        if type(self.class_to_include) is list:
-            if not(len(self.class_to_include) == 0):
-                self.nclasses = 0
-                l = []
-                k = np.zeros([0,keys.shape[1]])
-                for nc in self.class_to_include:
-                    # l.extend(labels[labels == nc])
-                    l.extend([int(self.nclasses) for iii in range(0, np.sum([labels == nc]))])
-                    k = np.row_stack([k, keys[labels == nc,: ]])
-                    self.nclasses+=1
-                labels = np.array(l)
-                keys = k.astype(int)
         # Set number of slices to cut
         self.repWidth = int(np.fix(np.mean(np.diff(keys, 1, 1))))
         self.SF = self.dt /self.fsamp
@@ -190,6 +238,7 @@ class MNDataset(NeuromorphicDataset):
 
         self.n = int(self.nSlicesPerRep * labels.shape[0])
         labels = np.repeat(labels, int(self.nSlicesPerRep))
+        recording = np.repeat(recording, int(self.nSlicesPerRep))
 
         if self.train:
             ## Create TRAIN DATASET HERE
@@ -212,12 +261,13 @@ class MNDataset(NeuromorphicDataset):
 
             # Reshuffling
             self.labelsTrain = labels[self.sliceTrain]
+            self.recordingTrain = recording[self.sliceTrain]
             self.n = self.labelsTrain.shape[0]
             self.keysTrain = tmp[self.sliceTrain]
 
             if self.equalize:
                 # TODO: Equalize number of slices per class
-                self.keysTrain, self.labelsTrain = equalizeClasses(self.keysTrain, self.labelsTrain)
+                self.keysTrain, self.labelsTrain, self.recordingTrain = equalizeClasses(self.keysTrain, self.labelsTrain, self.recordingTrain)
                 self.n = self.labelsTrain.shape[0]
 
         else:
@@ -232,19 +282,20 @@ class MNDataset(NeuromorphicDataset):
 
             # Reshuffling
             self.labelsTest = labels[slices_to_take]
+            self.recordingTest = recording[slices_to_take]
             self.n = self.labelsTest.shape[0]
             self.keysTest = tmp[slices_to_take]
 
             if self.equalize:
                 # TODO: Equalize number of slices per class
-                self.keysTest, self.labelsTest = equalizeClasses(self.keysTest, self.labelsTest)
+                self.keysTest, self.labelsTest, self.recordingTest = equalizeClasses(self.keysTest, self.labelsTest, self.recordingTest)
                 self.n = self.labelsTest.shape[0]
 
         ## 3. Create transform
         transform, target_transform = self.createTransform(train)
 
         super(MNDataset, self).__init__(
-            root,
+            root[0],
             transform=transform,
             target_transform=target_transform)
 
@@ -258,10 +309,14 @@ class MNDataset(NeuromorphicDataset):
 
         if self.train:
             target = self.labelsTrain[key]
+            recording = self.recordingTrain[key]
             key = self.keysTrain[key]
+
         else:
             target = self.labelsTest[key]
+            recording = self.recordingTest[key]
             key = self.keysTest[key]
+
 
         data = self.sample(key, T=int(np.fix(self.chunk_size/self.dt*self.fsamp)), ov=int(np.fix(self.chunk_size*self.ov/self.dt*self.fsamp)))
 
@@ -273,9 +328,9 @@ class MNDataset(NeuromorphicDataset):
 
         if self.target_transform is not None:
             target = self.target_transform(target)
+            recording = self.target_transform(recording)
 
-
-        return data, target
+        return data, target #, recording
 
     def sample(self, key, T=300, ov=0):
 
@@ -289,15 +344,18 @@ class MNDataset(NeuromorphicDataset):
             # Exclude muscles in self.muscle2Excl
             if (np.argwhere(np.array(self.muscle2Excl) == iii + 1)).shape[0] == 0:
                 # If contains motor neurons
-                if self.data[iii, 0].shape[1] > 0:
-                    # Run across motorneurons in the muscle
-                    for jjj in range(0, self.data[iii, 0].shape[0]):
-                        if (key[0]+self.key_counter*T+T) <= key[1]:
-                            # Equivalent of "get_tmad_slice", but we can try also with that function
-                            times.extend(self.data[iii, 0][jjj, 0][(self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T))])
-                            addr.extend([mmm for _ in range(0, np.sum((self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T))))])
-                            NUMFIRINGS += np.sum((self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T)))
-                            mmm += 1
+                try:
+                    if self.data[iii, 0].shape[0] > 0:
+                        # Run across motorneurons in the muscle
+                        for jjj in range(0, self.data[iii, 0].shape[0]):
+                            if (key[0]+self.key_counter*T+T) <= key[1]:
+                                # Equivalent of "get_tmad_slice", but we can try also with that function
+                                times.extend(self.data[iii, 0][jjj, 0][(self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T))])
+                                addr.extend([mmm for _ in range(0, np.sum((self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T))))])
+                                NUMFIRINGS += np.sum((self.data[iii, 0][jjj, 0] >= key[0]) & (self.data[iii, 0][jjj, 0] < (key[0]+self.key_counter*T+T)))
+                                mmm += 1
+                except:
+                    print('Merda!')
 
         # Remove here times, addr items less than firing thr
         if NUMFIRINGS >= np.fix(self.chunk_size / 1000 * self.thr_firing_excl_slice * self.nMN / 10):
@@ -391,23 +449,28 @@ class MNDataset(NeuromorphicDataset):
     #         yield X_batch.detach().cpu().to_dense().numpy(), y_batch.detach().cpu().numpy()
     #
     #         counter += 1
-def equalizeClasses(keys,labels):
+def equalizeClasses(keys,labels,recording):
     m = np.inf
     for nc in range(0, max(labels)+1):
         m = np.min([np.sum(labels == nc), m])
     m = int(m)
     kk = np.zeros([0,  keys .shape[1]])
     ll = []
+    rr = []
     for nc in range(0, max(labels)+1):
         kk = np.row_stack([kk,  keys[labels == nc][0:m]])
         ll.extend([nc for iii in range(0, m)])
+        rr.extend(recording[labels == nc][0:m])
     slices_to_take = np.arange(0, len(ll))
     random.shuffle(slices_to_take)
     ll = np.array(ll)
     kk = kk.astype(int)
+    rr = np.array(rr)
+
     ll = ll[slices_to_take]
     kk = kk[slices_to_take]
-    return kk, ll
+    rr = rr[slices_to_take]
+    return kk, ll, rr
 
 def create_datasets(
         root='data/motoneurons/MNDS_KaJu.mat',
@@ -419,6 +482,7 @@ def create_datasets(
         perc_test_norm=0.1,
         muscle_to_exclude=[],
         class_to_include=[],
+        min_nMN=[],
         thr_firing_excl_slice=[],
         ds=1,
         dt=1000):
@@ -429,6 +493,7 @@ def create_datasets(
                              perc_test_norm=perc_test_norm,
                              muscle_to_exclude=muscle_to_exclude,
                              class_to_include=class_to_include,
+                             min_nMN=min_nMN,
                              thr_firing_excl_slice=thr_firing_excl_slice,
                              slices_to_take=[],
                              dt=dt)
@@ -439,6 +504,7 @@ def create_datasets(
                             perc_test_norm=perc_test_norm,
                             muscle_to_exclude=muscle_to_exclude,
                             class_to_include=class_to_include,
+                            min_nMN=min_nMN,
                             thr_firing_excl_slice=thr_firing_excl_slice,
                             slices_to_take=train_ds.sliceTest,
                             dt=dt)
@@ -468,6 +534,7 @@ def create_dataloader(
         perc_test_norm=0.1,
         muscle_to_exclude=[],
         class_to_include=[],
+        min_nMN=[],
         thr_firing_excl_slice=[],
         ds=1,
         dt=1000,
@@ -482,6 +549,7 @@ def create_dataloader(
         perc_test_norm=perc_test_norm,
         muscle_to_exclude=muscle_to_exclude,
         class_to_include=class_to_include,
+        min_nMN=min_nMN,
         thr_firing_excl_slice=thr_firing_excl_slice,
         ds=ds,
         dt=dt)
