@@ -19,7 +19,7 @@ dataset: mn_dataloader_def
 perc_test_norm: 0.2
 slices_for_train:
   folder: slices_for_training
-  type_train: data_select
+  type_train: hyperparameters
   perc_hyperpar: 0.4
 filename: data/motoneurons/MNDS_TaSi2_10ClassesIMRLTTaToGrips_AllPost_IPD.mat
 deltat: 1000
@@ -68,3 +68,4 @@ class_to_include:
 thr_firing_excl_slice: 0
 online_update: True
 learning_method: 'rtrl'
+save_dir: 'TaSi2'

@@ -1,4 +1,6 @@
 import argparse
+import sys
+
 import torch
 import numpy as np
 import tqdm
@@ -81,7 +83,6 @@ def print_params(params):
 
 def parse_args(default_params_file = 'parameters/params.yml'):
     parser = argparse.ArgumentParser(description='DECOLLE for event-driven object recognition')
-    # parser.add_argument('--device', type=str, default='cuda', help='Device to use (cpu or cuda)')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use (cpu or cuda)')
     parser.add_argument('--resume_from', type=str, default=None, metavar='path_to_logdir',
                         help='Path to a previously saved checkpoint')
@@ -92,7 +93,8 @@ def parse_args(default_params_file = 'parameters/params.yml'):
     parser.add_argument('--save_dir', type=str, default='default', help='Name of subdirectory to save results in')
     parser.add_argument('--verbose', type=bool, default=False, help='print verbose outputs')
     parser.add_argument('--seed', type=int, default=-1, help='CPU and GPU seed')
-    parser.add_argument('--no_train', type=bool, default=False, help='Train model (useful for resume)')
+    parser.add_argument('--no_train', dest='no_train', action='store_true', help='Train model (useful for resume)')
+    parser.add_argument('--log_to_file', default=False, action='store_true', help='Set this flag to store logs in file')
     
     parsed, unknown = parser.parse_known_args()
 
@@ -111,18 +113,31 @@ def parse_args(default_params_file = 'parameters/params.yml'):
 
 def prepare_experiment(name, args):
     from tensorboardX import SummaryWriter
+
+    params_file = args.params_file
+
+    with open(params_file, 'r') as f:
+        import yaml
+        params = yaml.load(f)
+
     if args.resume_from is None:
-        params_file = args.params_file
         if not args.no_save:
             current_time = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
-            log_dir = os.path.join('{0}/'.format(name),
-                                   args.save_dir,
+            if 'save_dir' in params.keys():
+                save_dir = params['save_dir']
+            else:
+                save_dir = args.save_dir
+            log_dir = os.path.join('logs/{0}/'.format(name),
+                                   save_dir,
                                    current_time + '_' + socket.gethostname())
             checkpoint_dir = os.path.join(log_dir, 'checkpoints')
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             from shutil import copy2
             copy2(params_file, os.path.join(log_dir, 'params.yml'))
+            os.system(f"echo `git remote get-url origin` `git rev-parse HEAD` > {os.path.join(log_dir, 'code_version')}")
+            if args.log_to_file:
+                sys.stdout = sys.stderr = open(os.path.join(log_dir, f'{current_time}.log'), 'w')
             writer = SummaryWriter(log_dir=log_dir)
             print('Saving results to {}'.format(log_dir))
     else:
@@ -133,9 +148,6 @@ def prepare_experiment(name, args):
             writer = SummaryWriter(log_dir=log_dir)
         print('Resuming model from {}'.format(log_dir))
 
-    with open(params_file, 'r') as f:
-        import yaml
-        params = yaml.load(f)
     
     if not 'learning_method' in params:
         print('Learning method is not explicitly defined, assuming RTRL')
