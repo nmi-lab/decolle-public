@@ -159,7 +159,8 @@ class MNDataset(NeuromorphicDataset):
         # Load file with data
         self.subj = self.root[(self.root.find('MNDS_') + 5):(self.root.find('MNDS_') + 9)]
         matfile = scipy.io.loadmat(self.root)
-        self.data = matfile['e']['mu'][0, 0][0, 0][1]
+        # We take all concatenate motor units and not mu0 = matfile['e']['mu'][0, 0][0, 0]['dataOnlyCommon']
+        self.data = matfile['e']['mu'][0, 0][0, 0]['dataOnlyCommon']
         self.fsamp = int(matfile['e']['fsamp'])
         self.list_all_musc = matfile['e']['muscles'][0, 0]
         KEYS = matfile['e']['Keys'][0, 0]
@@ -225,17 +226,19 @@ class MNDataset(NeuromorphicDataset):
 
     def define_slices_to_take(self):
         slice_for_train_path = os.getcwd() + '/' + self.slices_for_train_in['folder'] + '/'
+        slice_for_train_path = slice_for_train_path.replace('\\','//')
         if not os.path.isdir(slice_for_train_path):
             # If there is not a folder to take the .mat file for selecting the slices to take 
             # on the global dataset, make the folder
             os.mkdir(slice_for_train_path)
+        if not os.path.isfile(slice_for_train_path + 'slices_for_train_'+ self.subj +'_'+ str(self.nclasses) + '_'+self.root[-16:-4]+ '.mat'):
             # Create here the slice division
             select, hyper = divide_slices(slices_to_take=[],perc_test_norm=self.slices_for_train_in['perc_hyperpar'],n=self.n)
             self.slices_for_train['hyper_param'] = hyper
             self.slices_for_train['data_select'] = select
-            io.savemat(slice_for_train_path + 'slices_for_train_'+ self.subj + '.mat',   self.slices_for_train)
+            io.savemat(slice_for_train_path + 'slices_for_train_'+ self.subj +'_'+ str(self.nclasses) + '_'+self.root[-16:-4]+ '.mat',   self.slices_for_train)
         else:
-            data = io.loadmat(slice_for_train_path + 'slices_for_train_'+ self.subj + '.mat')
+            data = io.loadmat(slice_for_train_path + 'slices_for_train_'+ self.subj +'_'+ str(self.nclasses) + '_'+self.root[-16:-4]+ '.mat')
             self.slices_for_train['hyper_param'] = np.squeeze( data['hyper_param'], axis = 0 )
             self.slices_for_train['data_select'] = np.squeeze( data['data_select'], axis = 0 )
 
