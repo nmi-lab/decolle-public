@@ -1,0 +1,42 @@
+Mhid:
+- 300
+- 300
+Nhid: []
+act_rate: 0.288
+alpha:
+- 0.9283333333333333
+alpharp:
+- 0.85
+batch_size: 36
+batches_per_epoch: -1
+beta:
+- 0.85
+betas:
+- 0.0
+- 0.95
+burnin_steps: 200
+chunk_size_test: 300
+chunk_size_train: 300
+dataset: torchneuromorphic.nmnist.create_nmnist_small_noxtgt
+deltat: 1000
+input_shape:
+- 2
+- 32
+- 32
+kernel_size: null
+learning_method: bptt
+learning_rate: 0.01
+loss: smoothL1
+num_conv_layers: 0
+num_dl_workers: 4
+num_epochs: 200
+num_layers: 3
+num_mlp_layers: 2
+online_update: false
+out_channels: 10
+pool_size: null
+reg_l: 0.001
+test_interval: 2
+with_output_layer: true
+wrp:
+- 1.0
