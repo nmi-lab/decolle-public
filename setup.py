@@ -31,7 +31,7 @@ setup(
         "h5py",
         "tqdm",
         "tensorboardX",
-        "torchneuromorphic>=0.2",
+        "torchneuromorphic",
         "pyyaml"
     ]
 )

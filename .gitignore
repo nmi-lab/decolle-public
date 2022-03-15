@@ -10,9 +10,7 @@ __pycache__/
 *.py[cod]
 .*.sw*
 *.bak
-*runs_args*
-*logs
-
+.git_old
 # C extensions
 *.so
 script[0-9]*.sh

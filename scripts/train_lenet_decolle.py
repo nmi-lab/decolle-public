@@ -69,7 +69,7 @@ net = LenetDECOLLE( out_channels=params['out_channels'],
                     lc_ampl=params['lc_ampl'],
                     lif_layer_type = LIFLayer,
                     method=params['learning_method'],
-                    with_output_layer=True).to(device)
+                    with_output_layer=params['with_output_layer']).to(device)
 
 if hasattr(params['learning_rate'], '__len__'):
     from decolle.utils import MultiOpt
@@ -82,10 +82,13 @@ else:
 
 reg_l = params['reg_l'] if 'reg_l' in params else None
 
-if 'loss_scope' in params and params['loss_scope']=='crbp':
-    from decolle.lenet_decolle_model import CRBPLoss
-    loss = torch.nn.SmoothL1Loss(reduction='none')
-    decolle_loss = CRBPLoss(net = net, loss_fn = loss, reg_l=reg_l)
+if 'loss_scope' in params and params['loss_scope']=='global':
+    loss = [None for i in range(len(net))]
+    if net.with_output_layer: 
+        loss[-1] = cross_entropy_one_hot
+    else:
+        raise RuntimeError('bptt mode needs output layer')
+    decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=reg_l)
 else:
     loss = [torch.nn.SmoothL1Loss() for i in range(len(net))]
     if net.with_output_layer:
@@ -93,8 +96,10 @@ else:
     decolle_loss = DECOLLELoss(net = net, loss_fn = loss, reg_l=reg_l)
 
 ##Initialize
-net.init_parameters(data_batch)
+net.init_parameters(data_batch[:32])
 
+from decolle.init_functions import init_LSUV
+init_LSUV(net, data_batch[:32])
 ##Resume if necessary
 if args.resume_from is not None:
     print("Checkpoint directory " + checkpoint_dir)
