@@ -22,9 +22,6 @@ from decolle.utils import train, test, accuracy, load_model_from_checkpoint, sav
 
 dtype = torch.float32
 
-
-
-
 class FastSigmoid(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input_):
@@ -80,7 +77,7 @@ class BaseLIFLayer(nn.Module):
     NeuronState = namedtuple('NeuronState', ['P', 'Q', 'R', 'S'])
     sg_function = fast_sigmoid
 
-    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, do_detach=True):
+    def __init__(self, layer, alpha=.9, alpharp=.65, wrp=1.0, beta=.85, deltat=1000, do_detach=True, gain=1):
         '''
         deltat: timestep in microseconds (not milliseconds!)
         '''
@@ -96,6 +93,7 @@ class BaseLIFLayer(nn.Module):
         self.wrp = wrp
         self.state = None
         self.do_detach = do_detach
+        self.gain = gain
 
     def cuda(self, device=None):
         '''
@@ -173,7 +171,7 @@ class BaseLIFLayer(nn.Module):
                                       R=torch.zeros([input_shape[0], out_ch] + out_shape).type(dtype).to(device),
                                       S=torch.zeros([input_shape[0], out_ch] + out_shape).type(dtype).to(device))
 
-    def init_parameters(self, Sin_a):
+    def init_parameters(self):
         self.reset_parameters(self.base_layer)
 
     def forward(self, Sin_t):
@@ -181,7 +179,7 @@ class BaseLIFLayer(nn.Module):
             self.init_state(Sin_t)
 
         state = self.state
-        Q = self.beta * state.Q + self.tau_s * Sin_t #Wrong dynamics, kept for backward compatibility
+        Q = self.beta * state.Q + self.tau_s * self.gain*Sin_t #Wrong dynamics, kept for backward compatibility
         P = self.alpha * state.P + self.tau_m * state.Q #Wrong dynamics, kept for backward compatibility  
         R = self.alpharp * state.R - state.S * self.wrp
         U = self.base_layer(P) + R
@@ -215,7 +213,7 @@ class LIFLayer(BaseLIFLayer):
             self.init_state(Sin_t)
 
         state = self.state
-        Q = self.beta * state.Q + (1-self.beta)*Sin_t
+        Q = self.beta * state.Q + (1-self.beta)*Sin_t*self.gain
         P = self.alpha * state.P + (1-self.alpha)*state.Q  
         R = self.alpharp * state.R - (1-self.alpharp)*state.S * self.wrp
         U = self.base_layer(P) + R
@@ -225,17 +223,19 @@ class LIFLayer(BaseLIFLayer):
             state_detach(self.state)
         return S, U
 
-    def init_parameters(self, Sin_t, *args, **kwargs):
+    def init_parameters(self, *args, **kwargs):
         self.reset_parameters(self.base_layer, *args, **kwargs)
     
     def reset_parameters(self, layer):
         layer.reset_parameters()
         if hasattr(layer, 'out_channels'):
-            layer.bias.data = layer.bias.data*((1-self.alpha)*(1-self.beta))
             layer.weight.data[:] *= 1
+            if layer.bias is not None:
+                layer.bias.data = layer.bias.data*((1-self.alpha)*(1-self.beta))
         elif hasattr(layer, 'out_features'): 
             layer.weight.data[:] *= 5e-2
-            layer.bias.data[:] = layer.bias.data[:]*((1-self.alpha)*(1-self.beta))
+            if layer.bias is not None:
+                layer.bias.data[:] = layer.bias.data[:]*((1-self.alpha)*(1-self.beta))
         else:
             warnings.warn('Unhandled data type, not resetting parameters')
             
@@ -248,7 +248,7 @@ class LIFLayerRefractory(LIFLayer):
             self.init_state(Sin_t)
 
         state = self.state
-        Q = self.beta * state.Q + (1-self.beta)*Sin_t
+        Q = self.beta * state.Q + (1-self.beta)*Sin_t*self.gain
         P = self.alpha * state.P + (1-self.alpha)*state.Q  
         R = self.alpharp * state.R - state.S * state.U
         U_ = self.base_layer(P)
@@ -279,7 +279,7 @@ class LIFLayerNonorm(LIFLayer):
             self.init_state(Sin_t)
 
         state = self.state
-        Q = self.beta * state.Q + Sin_t
+        Q = self.beta * state.Q + Sin_t*self.gain
         P = self.alpha * state.P + state.Q  
         R = self.alpharp * state.R - state.S * self.wrp
         U = self.base_layer(P) + R
@@ -409,6 +409,7 @@ class DECOLLEBase(nn.Module):
 
     def get_trainable_parameters(self, layer=None):
         if layer is None:
+            #might require a requires_grad check (TODO) 
             return chain(*[l.parameters() for l in self.LIF_layers])
         else:
             return self.LIF_layers[layer].parameters()
@@ -422,7 +423,17 @@ class DECOLLEBase(nn.Module):
 
             return params
         else:
-            return self.LIF_layers[layer].named_parameters()
+            if not hasattr(layer, '__len__'):
+                layers = [layer]
+            else:
+                layers = layer
+            params = dict()
+            for l in layers:
+                cl = self.LIF_layers[l]
+                for k,p in cl.named_parameters():
+                    if p.requires_grad:
+                        params[k]=p
+            return params
 
     def init(self, data_batch, burnin = None):
         '''
@@ -444,12 +455,15 @@ class DECOLLEBase(nn.Module):
         return [l.state for l in self.LIF_layers]
 
     def init_parameters(self, data_batch):
+        '''
+        Initialize the state and parameters
+        '''
         with torch.no_grad():
-            Sin_t = data_batch[:, 0, :, :]
-            s_out, r_out = self.step(Sin_t)[:2]
-            ins = [self.LIF_layers[0].state.Q]+s_out
+            #Sin_t = data_batch[:, 0, :, :]
+            #s_out, r_out = self.step(Sin_t)[:2]
+            #ins = [self.LIF_layers[0].state.Q]+s_out
             for i,l in enumerate(self.LIF_layers):
-                l.init_parameters(ins[i])
+                l.init_parameters()
 
     def reset_lc_parameters(self, layer, lc_ampl):
         stdv = lc_ampl / np.sqrt(layer.weight.size(1))

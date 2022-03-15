@@ -447,7 +447,7 @@ class MultiOpt(object):
     def param_groups(self): 
         return [self.multioptparam] 
 
-def train_timewrapped(gen_train, loss_fn, net, opt, epoch, online_update=False, reg_loss_fn=None, batches_per_epoch=-1):
+def train_timewrapped(gen_train, loss_fn, net, opt, epoch, online_update=False, reg_loss_fn=None, batches_per_epoch=-1, final_t_loss=True):
     '''
     Trains a DECOLLE network
 
@@ -486,9 +486,14 @@ def train_timewrapped(gen_train, loss_fn, net, opt, epoch, online_update=False, 
         t_sample = data_batch.shape[1]
 
         u, ht = net(data_batch, return_sequence = True)
-
-        loss_ = loss_fn(u, target_batch)
-
+        
+        if final_t_loss:
+            loss_ = loss_fn(u, target_batch)
+        else:
+            loss_ = 0
+            for i in range(len(ht[-1])):
+                loss_ += loss_fn(ht[-1][i].to(device), target_batch)
+        
         if reg_loss_fn is not None:
             loss_ += reg_loss_fn(ht)
 

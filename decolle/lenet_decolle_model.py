@@ -31,12 +31,14 @@ class LenetDECOLLE(DECOLLEBase):
                  lc_ampl=[.5],
                  lif_layer_type = LIFLayer,
                  method='rtrl',
-                 with_output_layer = False):
+                 with_output_layer = False,
+                 with_bias = True):
 
         self.with_output_layer = with_output_layer
         self.num_layers = num_layers = num_conv_layers + num_mlp_layers
         self.num_conv_layers = num_conv_layers
         self.num_mlp_layers = num_mlp_layers
+        self.with_bias = with_bias
 
         if Mhid is None:
             Mhid = []
@@ -138,7 +140,7 @@ class LenetDECOLLE(DECOLLEBase):
                              do_detach= True if self.method == 'rtrl' else False)
             pool = nn.MaxPool2d(kernel_size=pool_size[i])
             if self.lc_ampl is not None:
-                readout = nn.Linear(int(feature_height * feature_width * Nhid[i + 1]), out_channels)
+                readout = nn.Linear(int(feature_height * feature_width * Nhid[i + 1]), out_channels, bias=self.with_bias)
 
                 # Readout layer has random fixed weights
                 for param in readout.parameters():
@@ -163,7 +165,7 @@ class LenetDECOLLE(DECOLLEBase):
         output_shape = None
 
         for i in range(self.num_mlp_layers):
-            base_layer = nn.Linear(Mhid[i], Mhid[i+1])
+            base_layer = nn.Linear(Mhid[i], Mhid[i+1], self.with_bias)
             layer = self.lif_layer_type[i+self.num_conv_layers](base_layer,
                          alpha=self.alpha[i],
                          beta=self.beta[i],

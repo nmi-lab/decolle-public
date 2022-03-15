@@ -106,7 +106,7 @@ class LenetDECOLLEFA(LenetDECOLLE):
                              do_detach= True if self.method == 'rtrl' else False)
             pool = nn.MaxPool2d(kernel_size=pool_size[i])
             if self.lc_ampl is not None:
-                readout = nn.FALinear(int(feature_height * feature_width * Nhid[i + 1]), out_channels)
+                readout = FALinear(int(feature_height * feature_width * Nhid[i + 1]), out_channels)
 
                 # Readout layer has random fixed weights
                 for param in readout.parameters():
@@ -139,7 +139,7 @@ class LenetDECOLLEFA(LenetDECOLLE):
                          deltat=self.deltat,
                          do_detach=True if self.method == 'rtrl' else False)
             if self.lc_ampl is not None:
-                readout = nn.FALinear(out_channels, out_channels)
+                readout = FALinear(out_channels, out_channels)
                 # Readout layer has random fixed weights
                 for param in readout.parameters():
                     param.requires_grad = False

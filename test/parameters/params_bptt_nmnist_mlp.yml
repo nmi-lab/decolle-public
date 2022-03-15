@@ -3,7 +3,7 @@ Mhid:
 - 300
 Nhid: []
 act_rate: 0.288
-alpha:
+alpha: 
 - 0.9283333333333333
 alpharp:
 - 0.85

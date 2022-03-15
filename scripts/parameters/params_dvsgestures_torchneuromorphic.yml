@@ -25,7 +25,7 @@ input_shape:
 kernel_size:
 - 7
 lc_ampl: 0.5
-learning_rate: 3.6e-6
+learning_rate: 3.6e-4
 learning_method: 'rtrl'
 loss: smoothL1
 lr_drop_factor: 5
@@ -34,7 +34,7 @@ num_epochs: 200
 num_conv_layers: 3
 num_mlp_layers: 0
 num_layers: 3
-num_dl_workers: 4
+num_dl_workers: 6
 optimizer: adamax
 out_channels: 11
 online_update: True
@@ -48,5 +48,5 @@ reg_l:
 - .0
 - .0
 - .0
-test_interval: 1
+test_interval: 3
 with_output_layer: False

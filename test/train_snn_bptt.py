@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import importlib
 
-from decolle.lenet_decolle_model import LenetDECOLLE, DECOLLELoss, LIFLayer, LIFLayerRefractory
+from decolle.lenet_decolle_model import LenetDECOLLE, DECOLLELoss, LIFLayer, LIFLayerRefractory, LIFLayerNonorm
 from decolle.init_functions import init_LSUV_actrate
 from decolle.utils import parse_args, train_timewrapped, test_timewrapped, save_checkpoint, load_model_from_checkpoint, prepare_experiment, write_stats, cross_entropy_one_hot, decolle_style_reg
 

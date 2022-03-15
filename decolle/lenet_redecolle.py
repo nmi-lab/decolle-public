@@ -16,7 +16,7 @@ class RecLIFLayer(BaseLIFLayer):
         super(RecLIFLayer, self).__init__(*args, **kwargs)
         
         #Make the following smarter to handle convolutional neural networks.
-        self.rec_layer = nn.Linear(self.base_layer.out_features, self.base_layer.out_features)
+        self.rec_layer = nn.Linear(self.base_layer.out_features, self.base_layer.out_features, bias=False)
     
     def cuda(self, device=None):
         '''
@@ -53,7 +53,7 @@ class RecLIFLayer(BaseLIFLayer):
         #Forward traces
         state = self.state
         P = self.alpha * state.P + (1-self.alpha)*state.Q
-        Q = self.beta  * state.Q + (1-self.beta) *Sin_t
+        Q = self.beta  * state.Q + (1-self.beta) *Sin_t*self.gain
 
         #Recurrent traces
         Pr = self.alpha * state.Pr + (1-self.alpha)*state.Qr
@@ -76,29 +76,33 @@ class RecLIFLayer(BaseLIFLayer):
             
         return S, U
 
-    def init_parameters(self, Sin_t, *args, **kwargs):
+    def init_parameters(self, *args, **kwargs):
         self.reset_parameters(self.base_layer, *args, **kwargs)
         self.reset_rec_parameters(self.rec_layer, *args, **kwargs)
 
     def reset_parameters(self, layer):
         layer.reset_parameters()
         if hasattr(layer, 'out_channels'):
-            layer.bias.data = layer.bias.data*((1-self.alpha)*(1-self.beta))
+            if layer.bias is not None:
+                layer.bias.data = layer.bias.data*((1-self.alpha)*(1-self.beta))
             layer.weight.data[:] *= 1
         elif hasattr(layer, 'out_features'): 
+            if layer.bias is not None:
+                layer.bias.data[:] = layer.bias.data[:]*((1-self.alpha)*(1-self.beta))
             layer.weight.data[:] *= 5e-2
-            layer.bias.data[:] = layer.bias.data[:]*((1-self.alpha)*(1-self.beta))
         else:
             warnings.warn('Unhandled data type, not resetting parameters')
 
     def reset_rec_parameters(self, layer):
         layer.reset_parameters()
         if hasattr(layer, 'out_channels'):
-            layer.bias.data *= 0 
+            if layer.bias is not None:
+                layer.bias.data *= 0 
             layer.weight.data *= 0 
         elif hasattr(layer, 'out_features'): 
+            if layer.bias is not None:
+                layer.bias.data[:]*= 0
             layer.weight.data[:]*=0
-            layer.bias.data[:]*= 0
         else:
             warnings.warn('Unhandled data type, not resetting parameters')
 
