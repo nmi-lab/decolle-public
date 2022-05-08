@@ -1,3 +1,15 @@
+# A spiking neural network for processing spiking neural data
+
+We adapted the DECOLLE framework to process spiking neural activity.
+
+In particular, we processed the activity of human spinal motor neurons for movement intention recognition. 
+This framework is integrated in a non-invasive interface that decodes the activity of motor neurons innervating intrinsic and extrinsic hand muscles. 
+In fact, one of the main limitations of current neural interfaces is that machine learning models cannot exploit the efficiency of the spike encoding operated by the nervous system. Spiking-based pattern recognition would detect the spatio-temporal sparse activity of a neuronal pool and lead to adaptive and compact implementations, eventually running locally in embedded systems.
+Emergent Spiking Neural Networks (SNN) have not yet been used for processing the activity of in-vivo human neurons.
+
+* **Simone Tanzarella** * - [Tanza13](https://github.com/Tanza13)
+* **Massi Iacono** - [miacono](https://github.com/miacono)
+
 # Deep Continuous Local Learning (DECOLLE)
 
 DECOLLE is an online learning framework for spiking neural networks.
