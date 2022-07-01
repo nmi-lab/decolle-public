@@ -24,7 +24,7 @@ input_shape:
 - 32
 kernel_size:
 - 7
-lc_ampl: 0.5
+lc_ampl: 2.0
 learning_rate: 3.6e-4
 learning_method: 'rtrl'
 loss: smoothL1

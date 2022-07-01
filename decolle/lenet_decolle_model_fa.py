@@ -102,6 +102,7 @@ class LenetDECOLLEFA(LenetDECOLLE):
                              alpha=self.alpha[i],
                              beta=self.beta[i],
                              alpharp=self.alpharp[i],
+                             wrp=self.wrp[i],
                              deltat=self.deltat,
                              do_detach= True if self.method == 'rtrl' else False)
             pool = nn.MaxPool2d(kernel_size=pool_size[i])
@@ -116,7 +117,7 @@ class LenetDECOLLEFA(LenetDECOLLE):
                 readout = nn.Identity()
             self.readout_layers.append(readout)
 
-            if self.dropout[i] < 1.0:
+            if self.dropout[i] > 0.0:
                 dropout_layer = nn.Dropout(self.dropout[i])
             else:
                 dropout_layer = nn.Identity()
@@ -131,15 +132,16 @@ class LenetDECOLLEFA(LenetDECOLLE):
         output_shape = None
 
         for i in range(self.num_mlp_layers):
-            base_layer = nn.Linear(Mhid[i], out_channels)
+            base_layer = nn.Linear(Mhid[i], Mhid[i+1], self.with_bias)
             layer = self.lif_layer_type[i+self.num_conv_layers](base_layer,
                          alpha=self.alpha[i],
                          beta=self.beta[i],
                          alpharp=self.alpharp[i],
+                         wrp=self.wrp[i],
                          deltat=self.deltat,
                          do_detach=True if self.method == 'rtrl' else False)
             if self.lc_ampl is not None:
-                readout = FALinear(out_channels, out_channels)
+                readout = FALinear(Mhid[i+1], out_channels)
                 # Readout layer has random fixed weights
                 for param in readout.parameters():
                     param.requires_grad = False
@@ -147,7 +149,7 @@ class LenetDECOLLEFA(LenetDECOLLE):
             else:
                 readout = nn.Identity()
 
-            if self.dropout[i] < 1.0:
+            if self.dropout[i] > 0.0:
                 dropout_layer = nn.Dropout(self.dropout[i])
             else:
                 dropout_layer = nn.Identity()

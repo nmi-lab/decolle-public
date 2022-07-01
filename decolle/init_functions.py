@@ -31,7 +31,7 @@ February 2016.
             init.orthogonal_(l.base_layer.weight)
 
             if hasattr(l,'rec_layer'):
-                if l.base_layer.bias is not None:
+                if l.rec_layer.bias is not None:
                     l.rec_layer.bias.data *= 0
                 init.orthogonal_(l.rec_layer.weight)
         alldone = False
@@ -53,14 +53,19 @@ February 2016.
                     done=False
                 else:
                     done=True
+                alldone*=done
                     
-                if np.abs(m-tgt_mu+.1)>.2:
+                if np.abs(m-tgt_mu)>.2:
                     if net.LIF_layers[i].base_layer.bias is not None:
                         net.LIF_layers[i].base_layer.bias.data -= .5*(m-tgt_mu) 
                     done=False
                 else:
                     done=True
                 alldone*=done
+            if alldone:
+                print("Initialization finalized:")
+                print("Layer: {0}, Variance: {1:.3}, Mean U: {2:.3}, Mean S: {3:.3}".format(i,v,m,mus))
+
                 
                 
 def init_LSUV_actrate(net, data_batch, act_rate, threshold=0., var=1.0):
